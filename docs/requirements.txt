@@ -1,2 +1,18 @@
+# Core dependencies
 numpy>=1.21.0
-matplotlib>=3.5.0 
+matplotlib>=3.5.0
+
+# Visualization dependencies
+mpl_toolkits  # Included with matplotlib
+
+# Development and testing (optional)
+pytest>=6.0.0
+pytest-cov>=2.10.0
+
+# Documentation (optional)
+sphinx>=4.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Type checking (optional)
+mypy>=0.910
+types-numpy>=1.20.0 

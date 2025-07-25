@@ -21,7 +21,7 @@
 │ • is_linearly_independent() → bool                                          │
 │ • get_determinant() → float                                                 │
 │ • can_perform_test() → bool                                                 │
-│ • compute_barycentric_coordinates(point) → Optional[Tuple[float, ...]]     │
+│ • embed_point(point) → Optional[Tuple[float, ...]]                         │
 │ • point_inside_simplex(point) → bool                                        │
 │ • convert_2d_to_homogeneous(point_2d) → Tuple[float, float, float]         │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -50,6 +50,10 @@
 │ • get_leaves() → List[SimplexTree]                                          │
 │ • get_nodes_at_depth(target_depth) → List[SimplexTree]                     │
 │ • find_containing_simplex(point) → Optional[SimplexTree]                   │
+│ • add_splitting_point(point) → List[SimplexTree]                           │
+│ • add_point_to_the_most_specific_simplex(point) → List[SimplexTree]        │
+│ • get_vertices_as_tuples() → List[Tuple[float, ...]]                       │
+│ • print_tree() → None                                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
                                         │
                                         │ contains
@@ -105,12 +109,13 @@
                                         │ uses
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TreeBuilder (Utilities)                           │
+│                           Visualization (Utilities)                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ Functions:                                                                  │
-│ • create_parent_child_tree_with_steady_branching() → ParentChildSimplexTreeNode │
-│ • create_left_child_right_sibling_tree_with_steady_branching() → LeftChildRightSiblingSimplexTreeNode │
-│ • analyze_tree_structure(root_node, node_type) → None                      │
+│ • visualize_simplex_tree(tree, splitting_point, title) → None              │
+│ • _visualize_3d_simplex(vertices, ax, color, alpha, linewidth, s, label)   │
+│ • _visualize_3d_children_recursive(node, ax, colors, depth)                │
+│ • _get_tetrahedron_faces(vertices) → List[List[Tuple[float, ...]]]         │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,13 +124,17 @@
 ### 1. **Simplex (Base Class)**
 - **Purpose**: Mathematical representation of a simplex (triangle, tetrahedron, etc.)
 - **Holds**: Vertices, transformation matrices, geometric calculations
-- **Provides**: Point-in-simplex testing, barycentric coordinates
+- **Provides**: Point-in-simplex testing, barycentric coordinates via `embed_point()`
+- **Key Method**: `point_inside_simplex(point)` - Tests if point is inside simplex
 
 ### 2. **SimplexTree (Main Class)**
 - **Purpose**: A Simplex that can have children (other SimplexTrees)
 - **Inherits**: ALL properties and methods from Simplex
-- **Adds**: Tree functionality (children, traversal, etc.)
+- **Adds**: Tree functionality (children, traversal, hierarchical subdivision)
 - **Key Concept**: Every SimplexTree IS a Simplex + tree capabilities
+- **Key Methods**: 
+  - `add_splitting_point(point)` - Creates children by replacing vertices with point
+  - `add_point_to_the_most_specific_simplex(point)` - Finds deepest containing simplex and splits it
 
 ### 3. **Tree Node Wrappers (Two Methodologies)**
 
@@ -134,33 +143,39 @@
 - **Holds**: One SimplexTree + list of child nodes
 - **Structure**: Each node has a list of children
 - **Use Case**: When you need easy access to all children
+- **Key Method**: `find_containing_simplex(point)` - Recursive point location
 
 #### **LeftChildRightSiblingSimplexTreeNode**
 - **Purpose**: Wrapper around SimplexTree using left child-right sibling structure
 - **Holds**: One SimplexTree + left_child + right_sibling pointers
 - **Structure**: Each node has one left child and one right sibling
 - **Use Case**: More memory efficient, good for binary-like operations
+- **Key Method**: `get_children()` - Traverses sibling chain to collect all children
 
-### 4. **TreeBuilder (Utilities)**
-- **Purpose**: Creates trees with steady branching factors
-- **Function**: Takes a subdivision function and builds hierarchical trees
-- **Branching Factor**: Equal to the dimension of the simplex (2 for triangles, 3 for tetrahedra)
+### 4. **Visualization (Utilities)**
+- **Purpose**: Interactive 3D visualization of simplex trees
+- **Function**: `visualize_simplex_tree()` - Creates matplotlib 3D plots
+- **Features**: Color-coded hierarchy, transparent overlapping, splitting point highlighting
 
 ## Data Flow Example
 
 ```
-1. Create root SimplexTree with vertices [(0,0), (4,0), (2,3)]
+1. Create root SimplexTree with vertices [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
    ↓
-2. SimplexTree inherits all Simplex functionality
+2. SimplexTree inherits all Simplex functionality (point_inside_simplex, embed_point)
    ↓
-3. Wrap in ParentChildSimplexTreeNode or LeftChildRightSiblingSimplexTreeNode
+3. Add splitting point (0.3, 0.4, 0.3) using add_point_to_the_most_specific_simplex()
    ↓
-4. Use TreeBuilder to create steady branching structure
+4. This creates 4 children by replacing each vertex with the splitting point
    ↓
-5. Each node can:
+5. Wrap in ParentChildSimplexTreeNode or LeftChildRightSiblingSimplexTreeNode
+   ↓
+6. Each node can:
    - Check if it's a SimplexTree (has children) or Simplex (no children)
    - Test if a point is inside using point_inside_simplex()
    - Traverse recursively to find containing simplex
+   ↓
+7. Visualize the entire tree structure with 3D interactive plot
 ```
 
 ## Key APIs
@@ -192,6 +207,15 @@ is_leaf = node.is_leaf()
 count = node.get_child_count()
 ```
 
+### **Hierarchical Subdivision**
+```python
+# Add splitting point to create children
+children = simplex_tree.add_splitting_point(point)
+
+# Add point to most specific (deepest) containing simplex
+children = simplex_tree.add_point_to_the_most_specific_simplex(point)
+```
+
 ## Memory Layout
 
 ```
@@ -204,9 +228,33 @@ Tree Node Wrapper (contains SimplexTree + tree structure)
     └── Tree structure (children list OR left_child/right_sibling)
 ```
 
+## Implementation Details
+
+### **Barycentric Coordinate Calculation**
+The `embed_point()` method in Simplex class:
+1. Sets first vertex as origin
+2. Builds transformation matrix A from remaining vertices
+3. Solves A⁻¹(P - V₀) for barycentric coordinates
+4. Returns (α₀, α₁, α₂, ...) where α₀ = 1 - Σαᵢ
+
+### **Point-in-Simplex Testing**
+The `point_inside_simplex()` method:
+1. Computes barycentric coordinates via `embed_point()`
+2. Checks all coordinates are in [0,1]
+3. Verifies sum equals 1 (within tolerance)
+4. Returns True if all conditions met
+
+### **Tree Subdivision**
+The `add_splitting_point()` method:
+1. Verifies point is inside simplex
+2. Creates n+1 children by replacing each vertex with the point
+3. Each child simplex shares the splitting point as one vertex
+4. Maintains hierarchical structure with proper parent-child relationships
+
 This architecture allows you to:
 1. **Use SimplexTree directly** for simple cases
 2. **Wrap in tree nodes** for complex hierarchical structures
 3. **Choose between two tree methodologies** based on your needs
-4. **Maintain steady branching** equal to simplex dimension
-5. **Traverse recursively** to find point locations 
+4. **Build hierarchical subdivisions** by adding splitting points
+5. **Traverse recursively** to find point locations
+6. **Visualize complex structures** with interactive 3D plots 
