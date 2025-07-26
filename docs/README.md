@@ -59,7 +59,12 @@ SimplexTreeClassifier/
     ├── README.md
     ├── class_hierarchy_diagram.md
     ├── tree_structure_visualization.md
-    └── requirements.txt
+    ├── requirements.txt
+    ├── example_usage.py
+    └── images/                   # Documentation images
+        ├── class_hierarchy.png
+        ├── 3d_tree_example.png
+        └── 2d_point_location.png
 ```
 
 ## 🚀 Quick Start

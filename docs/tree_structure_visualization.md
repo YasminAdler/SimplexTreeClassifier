@@ -28,13 +28,22 @@ Branching Factor: 4 (equal to dimension + 1)
 
 The `add_splitting_point()` method creates children by replacing each vertex with the splitting point:
 
+
+### Child 0: The Tehederon
+- **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
+
+![Class Hierarchy Diagram](images/Tedhedron_clean.png)
+
 ### Child 1: Replace V₀ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 1**: [(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)]
 
+![1 Children](images/Tedhedron_father.png)
+
 ### Child 2: Replace V₁ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 2**: [(0,0,0), (0.3,0.4,0.3), (0,1,0), (0,0,1)]
+
 
 ### Child 3: Replace V₂ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
@@ -43,6 +52,8 @@ The `add_splitting_point()` method creates children by replacing each vertex wit
 ### Child 4: Replace V₃ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 4**: [(0,0,0), (1,0,0), (0,1,0), (0.3,0.4,0.3)]
+
+![2 Children](images/Tedhedron_grandfather.png)
 
 ## Parent-Child List Structure
 
