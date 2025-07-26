@@ -2,6 +2,22 @@
 
 ## Example: 3D Tetrahedron with Splitting Point Subdivision
 
+### Visual Overview
+
+```mermaid
+graph TD
+    Root[Root Tetrahedron<br/>[(0,0,0), (1,0,0), (0,1,0), (0,0,1)]] --> Child1[Child 1<br/>[(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)]]
+    Root --> Child2[Child 2<br/>[(0,0,0), (0.3,0.4,0.3), (0,1,0), (0,0,1)]]
+    Root --> Child3[Child 3<br/>[(0,0,0), (1,0,0), (0.3,0.4,0.3), (0,0,1)]]
+    Root --> Child4[Child 4<br/>[(0,0,0), (1,0,0), (0,1,0), (0.3,0.4,0.3)]]
+    
+    style Root fill:#ff9999
+    style Child1 fill:#99ccff
+    style Child2 fill:#99ff99
+    style Child3 fill:#ffcc99
+    style Child4 fill:#cc99ff
+```
+
 ### Initial Setup
 ```
 Root Tetrahedron: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
@@ -29,16 +45,16 @@ Branching Factor: 4 (equal to dimension + 1)
 The `add_splitting_point()` method creates children by replacing each vertex with the splitting point:
 
 
-### Child 0: The Tehederon
+### Child 0: The Tetrahedron
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 
-![Class Hierarchy Diagram](images/Tedhedron_clean.jpg)
+![Original Tetrahedron](images/Tedhedron_clean.jpg "Original 3D tetrahedron before subdivision")
 
 ### Child 1: Replace V₀ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 1**: [(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)]
 
-![1 Children](images/Tedhedron_father.jpg)
+![First Child Subdivision](images/Tehdron_father.jpg "Tetrahedron with first vertex replaced by splitting point")
 
 ### Child 2: Replace V₁ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
@@ -53,7 +69,7 @@ The `add_splitting_point()` method creates children by replacing each vertex wit
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 4**: [(0,0,0), (1,0,0), (0,1,0), (0.3,0.4,0.3)]
 
-![2 Children](images/Tedhedron_grandfather.jpg)
+![Multiple Children Subdivision](images/Tehedron_grandfather.jpg "Tetrahedron with multiple vertices replaced by splitting points")
 
 ## Parent-Child List Structure
 
@@ -93,6 +109,25 @@ LeftChildRightSiblingSimplexTreeNode
 ```
 
 ## Point Location Algorithm Flow
+
+### Algorithm Visualization
+
+```mermaid
+flowchart TD
+    A[Start: Point P] --> B{Point in root simplex?}
+    B -->|No| C[Return None]
+    B -->|Yes| D{Is leaf node?}
+    D -->|Yes| E[Return this simplex]
+    D -->|No| F[Check all children]
+    F --> G{Point in child?}
+    G -->|No| F
+    G -->|Yes| H[Recurse on child]
+    H --> D
+    
+    style A fill:#e1f5fe
+    style E fill:#c8e6c9
+    style C fill:#ffcdd2
+```
 
 ### Example: Finding point (0.2, 0.3, 0.2)
 
