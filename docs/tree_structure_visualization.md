@@ -32,13 +32,13 @@ The `add_splitting_point()` method creates children by replacing each vertex wit
 ### Child 0: The Tehederon
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 
-![Class Hierarchy Diagram](images/Tedhedron_clean.png)
+![Class Hierarchy Diagram](images/Tedhedron_clean.jpg)
 
 ### Child 1: Replace V₀ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 1**: [(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)]
 
-![1 Children](images/Tedhedron_father.png)
+![1 Children](images/Tedhedron_father.jpg)
 
 ### Child 2: Replace V₁ with splitting point
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
@@ -53,7 +53,7 @@ The `add_splitting_point()` method creates children by replacing each vertex wit
 - **Original**: [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
 - **Child 4**: [(0,0,0), (1,0,0), (0,1,0), (0.3,0.4,0.3)]
 
-![2 Children](images/Tedhedron_grandfather.png)
+![2 Children](images/Tedhedron_grandfather.jpg)
 
 ## Parent-Child List Structure
 
