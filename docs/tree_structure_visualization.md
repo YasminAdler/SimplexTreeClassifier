@@ -1,22 +1,5 @@
 # Tree Structure Visualization
 
-## Example: 3D Tetrahedron with Splitting Point Subdivision
-
-### Visual Overview
-
-```mermaid
-graph TD
-    Root[Root Tetrahedron<br/>[(0,0,0), (1,0,0), (0,1,0), (0,0,1)]] --> Child1[Child 1<br/>[(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)]]
-    Root --> Child2[Child 2<br/>[(0,0,0), (0.3,0.4,0.3), (0,1,0), (0,0,1)]]
-    Root --> Child3[Child 3<br/>[(0,0,0), (1,0,0), (0.3,0.4,0.3), (0,0,1)]]
-    Root --> Child4[Child 4<br/>[(0,0,0), (1,0,0), (0,1,0), (0.3,0.4,0.3)]]
-    
-    style Root fill:#ff9999
-    style Child1 fill:#99ccff
-    style Child2 fill:#99ff99
-    style Child3 fill:#ffcc99
-    style Child4 fill:#cc99ff
-```
 
 ### Initial Setup
 ```
