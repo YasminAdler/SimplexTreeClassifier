@@ -155,14 +155,10 @@ if __name__ == "__main__":
     vertices_2d = [(0, 0), (1, 0), (0.5, 1)] 
     tree_2d = SimplexTree(vertices_2d)
     test_point = (0.5, 0.5)
-
-    # print(f"Point {test_point} inside simplex {vertices_2d} : {tree_2d.point_inside_simplex(test_point)}")
     
-    # embedded = tree_2d.embed_point(test_point)
-    # print(f"Embedded point coordinates: {embedded}")
+    embedded = tree_2d.embed_point(test_point)
+    print(f"Embedded point: {test_point} coordinates: {embedded}")
 
-    # print("-" * 60)
-    # print("Adding splitting points to the most specific simplex recursively")
     tree_2d.add_point_to_the_most_specific_simplex(test_point)
     tree_2d.add_point_to_the_most_specific_simplex((0.4, 0.5))
 
