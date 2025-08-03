@@ -11,7 +11,7 @@ VISUALIZATION_AVAILABLE = True
 
 
 class SimplexTree(Simplex):
-    def __init__(self, vertices: List[Tuple[float, ...]], tolerance: float = 1e-10):
+    def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10):
         super().__init__(vertices, tolerance)
         self.children: List[Optional['SimplexTree']] = []
         self.parent: Optional['SimplexTree'] = None
@@ -29,7 +29,7 @@ class SimplexTree(Simplex):
             return self.depth
         return max(child.get_depth() for child in self.children)
     
-    def add_child(self, child_vertices: List[Tuple[float, ...]]) -> 'SimplexTree':
+    def add_child(self, child_vertices: List[Tuple[float, float]]) -> 'SimplexTree':
         child = SimplexTree(child_vertices)
         child.parent = self
         child.depth = self.depth + 1
@@ -74,10 +74,10 @@ class SimplexTree(Simplex):
                 nodes.append(node)
         return nodes
     
-    def get_vertices_as_tuples(self) -> List[Tuple[float, ...]]:
+    def get_vertices_as_tuples(self) -> List[Tuple[float, float]]:
         return [tuple(float(x) for x in v) for v in self.vertices]
     
-    def find_containing_simplex(self, point: Tuple[float, ...]) -> Optional['SimplexTree']:     
+    def find_containing_simplex(self, point: Tuple[float, float]) -> Optional['SimplexTree']:     
         if not self.point_inside_simplex(point):
             return None
         
@@ -95,7 +95,7 @@ class SimplexTree(Simplex):
         vertex_str = str([tuple(v) for v in self.vertices])
         return f"{self.__class__.__name__}(vertices={vertex_str}, children={len(self.children)}, depth={self.depth})"
     
-    def add_splitting_point(self, point: Tuple[float, ...]) -> List['SimplexTree']:
+    def add_splitting_point(self, point: Tuple[float, float]) -> List['SimplexTree']:
         if not self.point_inside_simplex(point):
             raise ValueError(f"Point {point} is not inside this simplex")
         
@@ -116,7 +116,7 @@ class SimplexTree(Simplex):
         
         return children
 
-    def add_point_to_the_most_specific_simplex(self, point: Tuple[float, ...]) -> List['SimplexTree']:
+    def add_point_to_the_most_specific_simplex(self, point: Tuple[float, float]) -> List['SimplexTree']:
         containing_simplex = self.find_containing_simplex(point)
         
         if containing_simplex is None:
@@ -152,23 +152,23 @@ if __name__ == "__main__":
     print("TESTING SIMPLEX TREE")
     print("-" * 60)
     
-    vertices_3d = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)] 
-    tree_3d = SimplexTree(vertices_3d)
-    test_point = (0.3, 0.4, 0.0)
+    vertices_2d = [(0, 0), (1, 0), (0.5, 1)] 
+    tree_2d = SimplexTree(vertices_2d)
+    test_point = (0.5, 0.5)
 
-    # print(f"Point {test_point} inside simplex {vertices_3d} : {tree_3d.point_inside_simplex(test_point)}")
+    # print(f"Point {test_point} inside simplex {vertices_2d} : {tree_2d.point_inside_simplex(test_point)}")
     
-    # embedded = tree_3d.embed_point(test_point)
+    # embedded = tree_2d.embed_point(test_point)
     # print(f"Embedded point coordinates: {embedded}")
 
     # print("-" * 60)
     # print("Adding splitting points to the most specific simplex recursively")
-    tree_3d.add_point_to_the_most_specific_simplex(test_point)
-    tree_3d.add_point_to_the_most_specific_simplex((0.3,0.1,0.0))
+    tree_2d.add_point_to_the_most_specific_simplex(test_point)
+    tree_2d.add_point_to_the_most_specific_simplex((0.4, 0.5))
 
     print("\n" + "-" * 60)
-    tree_3d.print_tree()
+    tree_2d.print_tree()
     
     print("\n" + "-" * 60)
     print("Visualizing the simplex tree...")
-    visualize_simplex_tree(tree_3d, test_point, "3D Tetrahedron Splitting")
+    visualize_simplex_tree(tree_2d, None, "2D Triangle Splitting") 
