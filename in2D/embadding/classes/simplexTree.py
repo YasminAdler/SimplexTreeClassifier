@@ -7,9 +7,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utilss.visualization import visualize_simplex_tree
 from simplex import Simplex
 
-VISUALIZATION_AVAILABLE = True
-
-
 class SimplexTree(Simplex):
     def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10):
         super().__init__(vertices, tolerance)
@@ -124,6 +121,42 @@ class SimplexTree(Simplex):
         
         return containing_simplex.add_splitting_point(point)
     
+    def compute_barycentric_center(self) -> Tuple[float, float]:
+        center = np.mean(self.vertices, axis=0)
+        return tuple(float(x) for x in center)
+    
+    def add_barycentric_centers_to_all_leaves(self) -> int:
+        leaves = self.get_leaves()
+        subdivided_count = 0
+        
+        for leaf in leaves:
+            barycenter = leaf.compute_barycentric_center()
+            leaf.add_splitting_point(barycenter)
+            subdivided_count += 1
+        
+        return subdivided_count
+    
+    def add_barycentric_centers_at_depth(self, target_depth: int) -> int:
+        nodes_at_depth = self.get_nodes_at_depth(target_depth)
+        subdivided_count = 0
+        
+        for node in nodes_at_depth:
+            if not node.is_leaf():
+                continue
+            barycenter = node.compute_barycentric_center()
+            node.add_splitting_point(barycenter)
+            subdivided_count += 1
+        
+        return subdivided_count
+    
+    def add_barycentric_centers_recursively(self, levels: int) -> None:
+        for level in range(levels):
+            count = self.add_barycentric_centers_to_all_leaves()
+            print(f"Level {level + 1}: Subdivided {count} simplexes")
+            if count == 0:
+                print("No more simplexes to subdivide")
+                break
+    
     def print_tree(self) -> None:
         def format_vertices(vertices):
             return str([tuple(v) for v in vertices])
@@ -148,23 +181,35 @@ class SimplexTree(Simplex):
 
 
 if __name__ == "__main__":
-    print(" " * 60)
-    print("TESTING SIMPLEX TREE")
-    print("-" * 60)
+    vertices = [(0, 0), (1, 0), (0.5, 1)] 
+    # tree = SimplexTree(vertices)
     
-    vertices_2d = [(0, 0), (1, 0), (0.5, 1)] 
-    tree_2d = SimplexTree(vertices_2d)
-    test_point = (0.5, 0.5)
-    
-    embedded = tree_2d.embed_point(test_point)
-    print(f"Embedded point: {test_point} coordinates: {embedded}")
+    # barycenter = tree.compute_barycentric_center()
+    # print(f"Barycentric point of the initial triangle is: {barycenter}")
+    # visualize_simplex_tree(tree, None, "2D Triangle") 
 
-    tree_2d.add_point_to_the_most_specific_simplex(test_point)
-    tree_2d.add_point_to_the_most_specific_simplex((0.4, 0.5))
+    tree_barycentric = SimplexTree(vertices)
+    # visualize_simplex_tree(tree_barycentric, None, "tree_barycentric") 
 
-    print("\n" + "-" * 60)
-    tree_2d.print_tree()
+    tree_barycentric.add_barycentric_centers_recursively(2)
     
-    print("\n" + "-" * 60)
-    print("Visualizing the simplex tree...")
-    visualize_simplex_tree(tree_2d, None, "2D Triangle Splitting") 
+    print("\nTree structure after barycentric subdivision:")
+    print(f"Total nodes: {tree_barycentric.get_node_count()}")
+    print(f"Tree depth: {tree_barycentric.get_depth()}")
+    print(f"Leaf nodes: {len(tree_barycentric.get_leaves())}")
+    
+    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
+
+    tree_mixed = SimplexTree(vertices)
+    test_point = (0.343, 0.2)
+    
+    print(f"Adding custom point: {test_point}")
+    tree_mixed.add_point_to_the_most_specific_simplex(test_point)
+    
+    visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
+
+    print("\nNow adding barycentric centers to all leaves...")
+    count = tree_mixed.add_barycentric_centers_to_all_leaves()
+    print(f"Subdivided {count} leaf simplexes")
+    
+    visualize_simplex_tree(tree_mixed, None, "tree_mixed-manual point-barycentric centers") 

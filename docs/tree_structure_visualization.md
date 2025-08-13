@@ -59,7 +59,7 @@ The `add_splitting_point()` method creates children by replacing each vertex wit
 ```
 ParentChildSimplexTreeNode
 ├── simplex_tree: SimplexTree([(0,0,0), (1,0,0), (0,1,0), (0,0,1)])
-├── children: [
+├── children: 
 │   ├── ParentChildSimplexTreeNode
 │   │   └── simplex_tree: SimplexTree([(0.3,0.4,0.3), (1,0,0), (0,1,0), (0,0,1)])
 │   ├── ParentChildSimplexTreeNode
@@ -276,4 +276,140 @@ The branching factor is always equal to the dimension + 1:
 - **Point location**: O(log n) average case for balanced trees
 - **Memory usage**: O(n) where n is number of simplexes
 - **Subdivision cost**: O(d) where d is dimension
-- **Traversal efficiency**: Depends on tree structure and node type 
+- **Traversal efficiency**: Depends on tree structure and node type
+
+## Barycentric Subdivision
+
+### Overview
+
+- **Automatic centroid calculation**: `compute_barycentric_center()` computes the average of all vertices
+- **Recursive subdivision**: `add_barycentric_centers_recursively(levels)` subdivides for multiple levels
+- **Selective subdivision**: `add_barycentric_centers_to_all_leaves()` subdivides only leaf nodes
+- **Depth-based subdivision**: `add_barycentric_centers_at_depth(depth)` targets specific tree levels
+- **Mixed subdivision**: Combine manual point addition with automatic barycentric subdivision
+
+### Example 1: Computing Barycentric Center
+
+```python
+vertices = [(0, 0), (1, 0), (0.5, 1)] 
+tree = SimplexTree(vertices)
+
+barycenter = tree.compute_barycentric_center()
+print(f"Barycentric point of the initial triangle is: {barycenter}")
+# Output: Barycentric point of the initial triangle is: (0.5, 0.3333333333333333)
+```
+
+### Example 2: Recursive Barycentric Subdivision
+
+```python
+tree_barycentric = SimplexTree(vertices)
+tree_barycentric.add_barycentric_centers_recursively(2)
+
+print("\nTree structure after barycentric subdivision:")
+print(f"Total nodes: {tree_barycentric.get_node_count()}")
+print(f"Tree depth: {tree_barycentric.get_depth()}")
+print(f"Leaf nodes: {len(tree_barycentric.get_leaves())}")
+
+# Output:
+# Level 1: Subdivided 1 simplexes
+# Level 2: Subdivided 3 simplexes
+# 
+# Tree structure after barycentric subdivision:
+# Total nodes: 13
+# Tree depth: 2
+# Leaf nodes: 9
+
+visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision")
+```
+
+![Barycentric Subdivision](images/barycenter_recursively.png "Triangle after 2 levels of barycentric subdivision")
+
+### Example 3: Mixed Subdivision (Manual + Barycentric)
+
+```python
+tree_mixed = SimplexTree(vertices)
+test_point = (0.343, 0.2)
+
+print(f"Adding custom point: {test_point}")
+tree_mixed.add_point_to_the_most_specific_simplex(test_point)
+
+visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point")
+```
+
+![Manual Point Addition](images/manual_point.png "Triangle with manually added point")
+
+```python
+print("\nNow adding barycentric centers to all leaves...")
+count = tree_mixed.add_barycentric_centers_to_all_leaves()
+print(f"Subdivided {count} leaf simplexes")
+# Output: Subdivided 3 leaf simplexes
+
+visualize_simplex_tree(tree_mixed, None, "tree_mixed-manual point-barycentric centers")
+```
+
+![Mixed Subdivision](images/mixed_manual_and_barycentric.png "Triangle with both manual and barycentric subdivision")
+
+### Subdivision Properties
+
+#### Growth Pattern
+When applying barycentric subdivision:
+- **Level 1**: 1 simplex → 3 children (2D) or 4 children (3D)
+- **Level 2**: Each child subdivides → 9 total leaves (2D) or 16 total leaves (3D)
+- **Level n**: Number of leaves = (d+1)^n where d is dimension
+
+#### Tree Structure After Barycentric Subdivision
+
+```
+2D Triangle Example:
+                    Root SimplexTree
+                    [(0,0), (1,0), (0.5,1)]
+                    barycenter: (0.5, 0.333)
+                           │
+                    ┌──────┼──────┐
+              Child 1  Child 2  Child 3
+        [(0.5,0.333), (1,0), (0.5,1)]  [(0,0), (0.5,0.333), (0.5,1)]  [(0,0), (1,0), (0.5,0.333)]
+              │                              │                              │
+         (3 children)                   (3 children)                   (3 children)
+```
+
+#### Geometric Properties of Barycentric Subdivision
+- **Uniform refinement**: All simplexes at the same level have similar sizes
+- **Volume preservation**: Total volume remains constant
+- **Centroid property**: Each child simplex contains the parent's barycentric center
+- **Symmetry**: The subdivision pattern is symmetric with respect to the original simplex
+
+### API Methods for Barycentric Subdivision
+
+#### `compute_barycentric_center() → Tuple[float, ...]`
+Computes the centroid of the simplex by averaging all vertices.
+
+```python
+barycenter = simplex.compute_barycentric_center()
+# For triangle [(0,0), (1,0), (0.5,1)]: returns (0.5, 0.333...)
+```
+
+#### `add_barycentric_centers_to_all_leaves() → int`
+Subdivides all leaf nodes by adding their barycentric centers.
+
+```python
+count = tree.add_barycentric_centers_to_all_leaves()
+print(f"Subdivided {count} simplexes")
+```
+
+#### `add_barycentric_centers_at_depth(depth: int) → int`
+Subdivides only the leaf nodes at a specific depth.
+
+```python
+count = tree.add_barycentric_centers_at_depth(1)
+# Only subdivides depth-1 nodes that don't have children
+```
+
+#### `add_barycentric_centers_recursively(levels: int) → None`
+Repeatedly applies barycentric subdivision for the specified number of levels.
+
+```python
+tree.add_barycentric_centers_recursively(3)
+# Level 1: Subdivided 1 simplexes
+# Level 2: Subdivided 3 simplexes  
+# Level 3: Subdivided 9 simplexes
+```
