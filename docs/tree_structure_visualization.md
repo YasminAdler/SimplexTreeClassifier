@@ -278,7 +278,23 @@ The branching factor is always equal to the dimension + 1:
 - **Subdivision cost**: O(d) where d is dimension
 - **Traversal efficiency**: Depends on tree structure and node type
 
-## Barycentric Subdivision
+## Why SimplexTree Requires Exactly n+1 Vertices
+
+A fundamental property of SimplexTree is that it requires exactly n+1 vertices in n-dimensional space:
+- **2D**: Exactly 3 vertices (triangle)
+- **3D**: Exactly 4 vertices (tetrahedron)
+
+This is because a simplex is mathematically defined as the simplest possible polytope in its dimension. The restriction ensures:
+1. **Invertible transformation matrix** for barycentric coordinates
+2. **Unique point location** within the simplex
+3. **Consistent subdivision** patterns
+
+If you have more points, you must either:
+- Create multiple simplexes (triangulation)
+- Use some points as the base simplex and add others as splitting points
+- Create a bounding simplex that contains all points
+
+# Barycentric Subdivision
 
 ### Overview
 

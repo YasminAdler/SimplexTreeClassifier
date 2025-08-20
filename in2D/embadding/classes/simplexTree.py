@@ -182,23 +182,23 @@ class SimplexTree(Simplex):
 
 if __name__ == "__main__":
     vertices = [(0, 0), (1, 0), (0.5, 1)] 
-    # tree = SimplexTree(vertices)
+    tree = SimplexTree(vertices)
     
-    # barycenter = tree.compute_barycentric_center()
-    # print(f"Barycentric point of the initial triangle is: {barycenter}")
+    barycenter = tree.compute_barycentric_center()
+    print(f"Barycentric point of the initial triangle is: {barycenter}")
     # visualize_simplex_tree(tree, None, "2D Triangle") 
 
     tree_barycentric = SimplexTree(vertices)
-    # visualize_simplex_tree(tree_barycentric, None, "tree_barycentric") 
 
-    tree_barycentric.add_barycentric_centers_recursively(2)
+    tree_barycentric.add_barycentric_centers_recursively(1)
+    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric") 
     
     print("\nTree structure after barycentric subdivision:")
     print(f"Total nodes: {tree_barycentric.get_node_count()}")
     print(f"Tree depth: {tree_barycentric.get_depth()}")
     print(f"Leaf nodes: {len(tree_barycentric.get_leaves())}")
     
-    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
+    # visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
 
     tree_mixed = SimplexTree(vertices)
     test_point = (0.343, 0.2)
@@ -206,10 +206,16 @@ if __name__ == "__main__":
     print(f"Adding custom point: {test_point}")
     tree_mixed.add_point_to_the_most_specific_simplex(test_point)
     
-    visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
+    # visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
 
     print("\nNow adding barycentric centers to all leaves...")
     count = tree_mixed.add_barycentric_centers_to_all_leaves()
     print(f"Subdivided {count} leaf simplexes")
     
-    visualize_simplex_tree(tree_mixed, None, "tree_mixed-manual point-barycentric centers") 
+    
+    # tree_mixed.add_barycentric_centers_recursively(2)
+
+    # visualize_simplex_tree(tree_mixed, None, "mixed") 
+    
+    # tree_mixed.add_point_to_the_most_specific_simplex(test_point)
+
