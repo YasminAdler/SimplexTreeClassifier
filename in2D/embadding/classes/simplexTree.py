@@ -3,7 +3,11 @@ from typing import List, Optional, Iterator, Tuple
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, current_dir)
+sys.path.insert(0, parent_dir)
+
 from utilss.visualization import visualize_simplex_tree
 from simplex import Simplex
 
@@ -186,7 +190,7 @@ if __name__ == "__main__":
     
     barycenter = tree.compute_barycentric_center()
     print(f"Barycentric point of the initial triangle is: {barycenter}")
-    # visualize_simplex_tree(tree, None, "2D Triangle") 
+    visualize_simplex_tree(tree, None, "2D Triangle") 
 
     tree_barycentric = SimplexTree(vertices)
 
@@ -198,7 +202,7 @@ if __name__ == "__main__":
     print(f"Tree depth: {tree_barycentric.get_depth()}")
     print(f"Leaf nodes: {len(tree_barycentric.get_leaves())}")
     
-    # visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
+    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
 
     tree_mixed = SimplexTree(vertices)
     test_point = (0.343, 0.2)
@@ -206,16 +210,16 @@ if __name__ == "__main__":
     print(f"Adding custom point: {test_point}")
     tree_mixed.add_point_to_the_most_specific_simplex(test_point)
     
-    # visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
+    visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
 
     print("\nNow adding barycentric centers to all leaves...")
     count = tree_mixed.add_barycentric_centers_to_all_leaves()
     print(f"Subdivided {count} leaf simplexes")
     
     
-    # tree_mixed.add_barycentric_centers_recursively(2)
+    tree_mixed.add_barycentric_centers_recursively(2)
 
-    # visualize_simplex_tree(tree_mixed, None, "mixed") 
+    visualize_simplex_tree(tree_mixed, None, "mixed") 
     
-    # tree_mixed.add_point_to_the_most_specific_simplex(test_point)
+    tree_mixed.add_point_to_the_most_specific_simplex(test_point)
 

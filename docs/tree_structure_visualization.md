@@ -429,3 +429,88 @@ tree.add_barycentric_centers_recursively(3)
 # Level 2: Subdivided 3 simplexes  
 # Level 3: Subdivided 9 simplexes
 ```
+
+---
+
+# SimplexTree Classifier Documentation
+
+## Classification Pipeline
+
+### Three-Stage Process:
+1. **Tree Construction**: Recursive barycentric subdivision → `(d+1)^h` leaf simplexes
+2. **Feature Transformation**: Point → Barycentric coordinates → Sparse matrix
+3. **Linear Classification**: SVM/Linear Regression on transformed features
+
+## Mathematical Formulas
+
+| Parameter | Formula | Description |
+|-----------|---------|-------------|
+| **h** | User defined | Tree height (subdivision levels) |
+| **d** | User defined | Spatial dimension |
+| **leaves** | `(d + 1)^h` | Number of leaf simplexes |
+| **features** | `(d+1)^(h+1)` | Global feature vector size |
+
+**Examples:**
+- 2D, Height 2: 9 leaves, 27 features
+- 2D, Height 1: 3 leaves, 9 features
+
+![Formula Visualization](images/formula_examples.png "Visual representation of tree growth with subdivision levels")
+
+## Usage Example
+
+```python
+from simplex_tree_classifier import SimplexTreeClassifier
+
+# Create and train classifier
+classifier = SimplexTreeClassifier(
+    vertices=[(0, 0), (1, 0), (0.5, 1)],
+    regularization=0.1,
+    subdivision_levels=2,
+    classifier_type='svc'
+)
+
+classifier.fit(X_train, y_train)
+predictions = classifier.predict(X_test)
+
+# Visualize results
+classifier.visualize_tree_and_classification(X_train, y_train)
+```
+
+![Usage Results](images/usage_example.png "SimplexTree classifier visualization with decision boundaries")
+
+## Data Requirements
+
+- **Input**: 2D points as vectors `(x, y)`
+- **Preprocessing**: Normalized to triangle `[(0,0), (1,0), (0.5,1)]`
+- **Output**: Binary/multi-class classification
+- **Filtering**: Points outside simplex are excluded
+
+![Data Preprocessing](images/data_normalization.png "Data transformation and triangle fitting process")
+
+## Implementation Features
+
+### Supported Classifiers
+- Support Vector Machine (SVM)
+- Linear SVM  
+- Linear Regression
+
+### Key Features
+- **Sparse Matrix**: Memory-efficient `scipy.sparse.lil_matrix`
+- **Visualization**: 2D plotting with simplex boundaries
+- **Scalable**: Exponential feature growth with subdivision
+
+![Feature Comparison](images/feature_comparison.png "Comparison of different subdivision levels and their decision boundaries")
+
+## Dependencies
+
+```python
+numpy, scipy, scikit-learn, matplotlib, ucimlrepo
+```
+
+## Future Work
+
+- **N-Dimensional Extension**: Generalize to n-dimensional simplexes
+- **Adaptive Subdivision**: Data-driven tree construction
+- **Performance Optimization**: Efficient high-dimensional algorithms
+
+![Future Extensions](images/future_work.png "Visualization of potential 3D and higher-dimensional extensions")
