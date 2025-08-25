@@ -11,7 +11,7 @@ def visualize_simplex_tree(tree, splitting_point: Tuple[float, float] = None, ti
     colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'cyan', 'magenta']
     
     vertices = tree.get_vertices_as_tuples()
-    _visualize_2d_simplex(vertices, ax, 'red', alpha=0.3, linewidth=2, s=100, label='Original vertices')
+    _visualize_2d_simplex(vertices, ax, 'red', alpha=0.3, linewidth=2, s=20, label='Original vertices')
     
     _visualize_2d_children_recursive(tree, ax, colors, depth=0)
     

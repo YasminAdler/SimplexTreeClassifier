@@ -83,39 +83,25 @@ Feature vector size = 3² = 9 features
 - **Geometric Visualization**: 2D plotting of simplex boundaries and decision surfaces
 - **Scalable Architecture**: Exponential feature growth with subdivision levels
 
-## Usage Example
+## Algorithmic Explaintaiton
 
-```python
-from simplex_tree_classifier import SimplexTreeClassifier
+ALGORITHM: EmbedDataPoints
+1. FOR point_index = 0 TO len(data_points)-1:
+2.   point = tuple(data_points[point_index])
+   
+3.   // Find which leaf simplex contains this point
+4.   containing_simplex = simplex_tree.find_containing_simplex(point)
+   
+5.   IF containing_simplex IS NOT NULL:
+6.     // Get barycentric coordinates within this simplex
+7.     local_embeddings = containing_simplex.embed_point(point)
+8.     simplex_vertices = containing_simplex.get_vertices_as_tuples()
+     
+9.     // Map local coordinates to global matrix positions
+10.    FOR local_idx = 0 TO len(local_embeddings)-1:
+11.      coordinate = local_embeddings[local_idx]
+12.      vertex = simplex_vertices[local_idx]
+13.      global_idx = all_vertices_list.index(vertex)
+14.      barycentric_matrix[point_index, global_idx] = coordinate
 
-# Create classifier
-classifier = SimplexTreeClassifier(
-    vertices=[(0, 0), (1, 0), (0.5, 1)],
-    regularization=0.1,
-    subdivision_levels=2,
-    classifier_type='svc'
-)
-
-# Train
-classifier.fit(X_train, y_train)
-
-# Predict
-predictions = classifier.predict(X_test)
-
-# Visualize
-classifier.visualize_tree_and_classification(X_train, y_train)
-```
-
-## Future Work
-
-- **N-Dimensional Extension**: Generalize from 2D triangles to n-dimensional simplexes
-- **Adaptive Subdivision**: Dynamic tree construction based on data distribution
-- **Performance Optimization**: Efficient algorithms for high-dimensional spaces
-
-## Dependencies
-
-- `numpy`
-- `scipy`
-- `scikit-learn`
-- `matplotlib`
-- `ucimlrepo` (for dataset loading)
+## 
