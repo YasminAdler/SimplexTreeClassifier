@@ -5,20 +5,36 @@ from matplotlib.collections import PatchCollection
 import numpy as np
 
 
-def visualize_simplex_tree(tree, splitting_point: Tuple[float, float] = None, title: str = "Simplex Tree Visualization"):
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
+def visualize_simplex_tree(tree, splitting_point: Tuple[float, float] = None,
+                          data_points: List[Tuple[float, float]] = None,
+                          title: str = "Simplex Tree Visualization",
+                          figsize: Tuple[int, int] = (12, 8)):
+    fig, ax = plt.subplots(figsize=figsize)
+
     colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'cyan', 'magenta']
-    
+
     vertices = tree.get_vertices_as_tuples()
     _visualize_2d_simplex(vertices, ax, 'red', alpha=0.3, linewidth=2, s=20, label='Original vertices')
-    
+
     _visualize_2d_children_recursive(tree, ax, colors, depth=0)
-    
+
     if splitting_point:
-        ax.scatter([splitting_point[0]], [splitting_point[1]], 
+        ax.scatter([splitting_point[0]], [splitting_point[1]],
                   color='yellow', s=200, marker='*', label='Splitting point')
-    
+
+    if data_points:
+        if isinstance(data_points, list) and len(data_points) > 0:
+            if hasattr(data_points[0], '__iter__') and len(data_points[0]) == 2:
+                x_coords = [point[0] for point in data_points]
+                y_coords = [point[1] for point in data_points]
+            else:
+                x_coords = [data_points[0]]
+                y_coords = [data_points[1]]
+
+            ax.scatter(x_coords, y_coords,
+                      color='black', s=80, marker='o', alpha=0.8,
+                      edgecolors='white', linewidth=1, label='Data points', zorder=10)
+
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_title(title)
@@ -65,56 +81,3 @@ def _visualize_2d_children_recursive(node, ax, colors, depth: int):
         _visualize_2d_simplex(child_vertices, ax, color, alpha=0.2, linewidth=1, s=30)
         _visualize_2d_children_recursive(child, ax, colors, depth + 1)
 
-
-def visualize_triangle_with_point(triangle_vertices: List[Tuple[float, float]], 
-                                 point: Tuple[float, float], 
-                                 title: str = "Triangle with Point"):           
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    triangle = patches.Polygon(triangle_vertices, facecolor='lightblue', alpha=0.3, 
-                             edgecolor='blue', linewidth=2)
-    ax.add_patch(triangle)
-    
-    x, y = zip(*triangle_vertices)
-    ax.scatter(x, y, color='red', s=100, zorder=5, label='Triangle vertices')
-    
-    ax.scatter([point[0]], [point[1]], color='green', s=150, marker='*', 
-              zorder=6, label='Point')
-    
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_title(title)
-    ax.set_aspect('equal')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-def visualize_multiple_triangles(triangles: List[List[Tuple[float, float]]], 
-                                points: List[Tuple[float, float]] = None,
-                                title: str = "Multiple Triangles"):
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    colors = plt.cm.Set3(np.linspace(0, 1, len(triangles)))
-    
-    for i, triangle_vertices in enumerate(triangles):
-        triangle = patches.Polygon(triangle_vertices, facecolor=colors[i], alpha=0.3, 
-                                 edgecolor='black', linewidth=1)
-        ax.add_patch(triangle)
-        
-        x, y = zip(*triangle_vertices)
-        ax.scatter(x, y, color='red', s=50, zorder=5)
-    
-    if points:
-        for point in points:
-            ax.scatter([point[0]], [point[1]], color='green', s=100, marker='*', 
-                      zorder=6)
-    
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_title(title)
-    ax.set_aspect('equal')
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show() 

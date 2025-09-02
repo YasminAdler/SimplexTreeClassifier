@@ -41,9 +41,10 @@ class SimplexTreeClassifier:
     def _update_leaf_simplexes(self):
         self.leaf_simplexes = self.tree.get_leaves()
     
-    def transform(self, simplex_tree: SimplexTree, data_points) -> lil_matrix:
+    def transform(self, data_points) -> lil_matrix:
+        simplex_tree = self.tree
         all_vertices = set()
-        for node in simplex_tree.traverse_depth_first():
+        for node in simplex_tree.traverse_breadth_first():
             for vertex in node.vertices:
                 all_vertices.add(tuple(vertex))
                 
@@ -61,7 +62,7 @@ class SimplexTreeClassifier:
                 simplex_vertices = containing_simplex.get_vertices_as_tuples()
                 
                 print(f"point: {point}")
-                formatted_vertices = [f"({v[0]:.2f}, {v[1]:.2f})" for v in simplex_vertices]
+                formatted_vertices = [f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex_vertices]
                 print(f"containing_simplex: {formatted_vertices}")   
                              
                 
@@ -69,18 +70,39 @@ class SimplexTreeClassifier:
                     vertex = simplex_vertices[local_idx]
                     global_idx = all_vertices_list.index(vertex)
                     barycentric_matrix[point_index, global_idx] = coordinate
-        
-        print()            
-        print("Barycentric matrix shape:", barycentric_matrix.shape)
-        print("Matrix content:")
-        matrix_array = barycentric_matrix.toarray()
-        for i, row in enumerate(matrix_array):
-            formatted_row = [f"{val:.1f}" for val in row]
-            print(f"[{' '.join(formatted_row)}]")
-
+        print()
         return barycentric_matrix
-        
-    
+
+    def get_vertex_mapping(self) -> Dict[int, Tuple[float, float]]:
+        all_vertices = set()
+        for node in self.tree.traverse_breadth_first():
+            for vertex in node.vertices:
+                all_vertices.add(tuple(vertex))
+
+        all_vertices_list = sorted(list(all_vertices))
+
+        # Create mapping: column_index -> vertex_coordinates
+        vertex_mapping = {}
+        for idx, vertex in enumerate(all_vertices_list):
+            vertex_mapping[idx] = vertex
+
+        return vertex_mapping
+
+    def get_vertex_for_column(self, column_index: int) -> Tuple[float, float]:
+        """
+        Get the vertex coordinates for a specific column index.
+
+        Parameters:
+        - column_index: The column index in the barycentric matrix
+
+        Returns:
+        - Tuple of (x, y) coordinates for the vertex at that column
+        """
+        mapping = self.get_vertex_mapping()
+        if column_index not in mapping:
+            raise ValueError(f"Column index {column_index} is out of range. Valid indices: 0-{len(mapping)-1}")
+        return mapping[column_index]
+
     def normalize_data(self, data: np.ndarray) -> np.ndarray:
         if len(data.shape) == 1:
             data = data.reshape(1, -1)
@@ -119,70 +141,45 @@ class SimplexTreeClassifier:
         X_transformed = self.transform(self.tree, X_normalized)
         predictions = self.classifier.predict(X_transformed)
         return predictions
-    
-    
+
+    def visualize_with_data_points(self, data_points: np.ndarray, title: str = "Simplex Tree with Data Points", ## NOTE-to-self: the visualization is not accurate on the grid because the root shape has a little bit of padding from the frame
+                                  figsize: Tuple[int, int] = (8, 5)):
+        data_points_list = [tuple(point) for point in data_points]
+        visualize_simplex_tree(self.tree, data_points=data_points_list, title=title, figsize=figsize)
+
+
 if __name__ == "__main__":
+
+    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0,1)], subdivision_levels=2)
+    data_points = ((0.5,0.2), (0.1,0.4), (0.2, 0.7))
+    vertex_mapping = classifier.get_vertex_mapping()
+    transformed_matrix = classifier.transform(data_points)
     
-    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0,1)], subdivision_levels=1)
-    
-    print( "all tree vertices: ", classifier.tree.get_vertices_as_tuples()) ## Why doesnt it brings back (0.3, 0.3) as one of the tree's vertices
+    ## PRINTS: 
+    print("Column-to-vertex mapping:")
+    for col_idx, vertex in vertex_mapping.items():
+        print(f"  Column {col_idx} -> Vertex ({vertex[0]:.1f}, {vertex[1]:.1f})")
+        
     print()
-    
-    # print("Classifier tree structure:")
-    # print(f"Total nodes: {classifier.tree.get_node_count()}")
-    # print(f"Leaf count: {len(classifier.tree.get_leaves())}")
-    # print("Leaf simplexes:")
-    # for i, leaf in enumerate(classifier.tree.get_leaves()):
-    #     vertices = leaf.get_vertices_as_tuples()
-    #     formatted_vertices = [f"({v[0]:.1f}, {v[1]:.1f})" for v in vertices]
-    #     print(f"  Leaf {i}: {formatted_vertices}")
-    
-
-
-    data_points = ((0,0.3), (0.3,0), (0.2,0.2),(0.5, 0.5))
-    
-    classifier.transform(classifier.tree, data_points)
-    visualize_simplex_tree(classifier.tree)    ## Make this project back to 2D
-
-    
+    print("Barycentric matrix shape:", transformed_matrix.shape)
+    print("Matrix content:")
+    matrix_array = transformed_matrix.toarray()
+    for i, row in enumerate(matrix_array):
+        formatted_row = [f"{val:.1f}" for val in row]
+        print(f"[{' '.join(formatted_row)}]")
             
-################################################ TO SHOW ################################################
-    # print()
-    # print("ORIGINAL SIMPLEX:", simplex_tree.get_vertices_as_tuples())
-    # print()
+    print("\n" + "="*50)
+    print("TREE STRUCTURE:")
+    print("="*50)
+    classifier.tree.print_tree()
+
+    print("\n" + "="*50)
+    print("VISUALIZATION:")
+    print("="*50) 
+    classifier.visualize_with_data_points(data_points)
     
-    # data_point1 = (0.2, 0.3)
-    # data_point2 = (0.4, 0.1)
-    # data_point3 = (0.6, 0.3)
-    
-    # print("before adding centers")
-    # embedding1 = simplex_tree.embed_data_point(data_point1)
-    # print(f"embedding1 to point: {data_point1} are: ", embedding1)
-    
-    # simplex_tree.add_barycentric_centers_recursively(2)
-    # print()
-    # print("after adding centers")
-    # embadding2 = simplex_tree.embed_data_point(data_point2)
-    # print(f"embedding2 to point {data_point2} are: ", embadding2)
-    
-    # embadding3 = simplex_tree.embed_data_point(data_point3)
-    # print(f"embedding3 to point {data_point2} are: ", embadding3)
 
 
-    # if simplex_tree.children:
-    #     for i, child in enumerate(simplex_tree.children):
-    #         print(f"  Child {i} vertices: {child.get_vertices_as_tuples()}")
-            
-    # visualize_simplex_tree(simplex_tree)
-
-
-####################################################################################################
-    
-    
-    
-    
-################################################ TEST 2 ################################################
-    # iris = fetch_ucirepo(id=53)
     # X_iris_full = iris.data.features.values
     # y_iris_full = iris.data.targets.values.ravel()
     
@@ -225,5 +222,5 @@ if __name__ == "__main__":
             # classifier.visualize_tree_and_classification(X, y)
             
 ####################################################################################################
-        
+
 

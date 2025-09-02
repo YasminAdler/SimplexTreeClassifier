@@ -46,17 +46,18 @@ class SimplexTree(Simplex):
     def get_child_count(self) -> int:
         return len(self.children)
     
-    def traverse_depth_first(self) -> Iterator['SimplexTree']:
-        yield from self._dfs_traverse()
-    
-    def _dfs_traverse(self) -> Iterator['SimplexTree']:
-        yield self
-        for child in self.get_children():
-            yield from child._dfs_traverse()
+    def traverse_breadth_first(self) -> Iterator['SimplexTree']:
+        from collections import deque
+        queue = deque([self])
+        while queue:
+            node = queue.popleft()
+            yield node
+            for child in node.get_children():
+                queue.append(child)
     
     def get_leaves(self) -> List['SimplexTree']:
         leaves = []
-        for node in self.traverse_depth_first():
+        for node in self.traverse_breadth_first():
             if node.is_leaf():
                 leaves.append(node)
         return leaves
@@ -144,6 +145,18 @@ class SimplexTree(Simplex):
         
         for child in self.children:
             child.add_barycentric_centers_recursively(levels - 1)
+
+    def print_tree(self) -> None:
+        def _print(node, prefix: str = "", is_last: bool = True):
+            connector = "└── " if is_last else "├── "
+            vertices = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in node.get_vertices_as_tuples()])
+            print(f"{prefix}{connector}{vertices}")
+            new_prefix = prefix + ("    " if is_last else "│   ")
+            child_count = len(node.children)
+            for idx, child in enumerate(node.children):
+                _print(child, new_prefix, idx == child_count - 1)
+
+        _print(self)
 
 if __name__ == "__main__":
     vertices = [(0, 0), (1, 0), (0.5, 1)] 
