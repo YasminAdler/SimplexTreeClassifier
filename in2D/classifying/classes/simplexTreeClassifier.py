@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import sys
 import os
-from ucimlrepo import fetch_ucirepo
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 in2d_dir = os.path.join(current_dir, '..', '..')
@@ -14,6 +13,7 @@ sys.path.insert(0, in2d_dir)
 
 from embadding.classes.simplexTree import SimplexTree
 from embadding.utilss.visualization import visualize_simplex_tree
+from embadding.utilss.visualization import visualize_subdivision_levels
 
 
 class SimplexTreeClassifier:
@@ -43,13 +43,17 @@ class SimplexTreeClassifier:
     
     def transform(self, data_points) -> lil_matrix:
         simplex_tree = self.tree
-        all_vertices = set()
+        all_vertices = []
+        vertex_to_index = {}
+        
         for node in simplex_tree.traverse_breadth_first():
             for vertex in node.vertices:
-                all_vertices.add(tuple(vertex))
+                vertex_tuple = tuple(vertex)
+                if vertex_tuple not in vertex_to_index:
+                    vertex_to_index[vertex_tuple] = len(all_vertices)
+                    all_vertices.append(vertex_tuple)
                 
         max_vertices = len(all_vertices)
-        all_vertices_list = sorted(list(all_vertices))
         barycentric_matrix = lil_matrix((len(data_points), max_vertices))
         
         for point_index in range(len(data_points)): 
@@ -68,40 +72,41 @@ class SimplexTreeClassifier:
                 
                 for local_idx, coordinate in enumerate(data_point_embaddings):
                     vertex = simplex_vertices[local_idx]
-                    global_idx = all_vertices_list.index(vertex)
+                    global_idx = vertex_to_index[vertex]
                     barycentric_matrix[point_index, global_idx] = coordinate
         print()
         return barycentric_matrix
 
     def get_vertex_mapping(self) -> Dict[int, Tuple[float, float]]:
-        all_vertices = set()
+        all_vertices = []
+        vertex_to_index = {}
+        
+        # Collect vertices in insertion order (breadth-first traversal order)
         for node in self.tree.traverse_breadth_first():
             for vertex in node.vertices:
-                all_vertices.add(tuple(vertex))
+                vertex_tuple = tuple(vertex)
+                if vertex_tuple not in vertex_to_index:
+                    vertex_to_index[vertex_tuple] = len(all_vertices)
+                    all_vertices.append(vertex_tuple)
 
-        all_vertices_list = sorted(list(all_vertices))
-
-        # Create mapping: column_index -> vertex_coordinates
         vertex_mapping = {}
-        for idx, vertex in enumerate(all_vertices_list):
+        for idx, vertex in enumerate(all_vertices):
             vertex_mapping[idx] = vertex
 
         return vertex_mapping
 
-    def get_vertex_for_column(self, column_index: int) -> Tuple[float, float]:
-        """
-        Get the vertex coordinates for a specific column index.
-
-        Parameters:
-        - column_index: The column index in the barycentric matrix
-
-        Returns:
-        - Tuple of (x, y) coordinates for the vertex at that column
-        """
+    def get_column_to_vertex_mapping(self) -> str:
         mapping = self.get_vertex_mapping()
-        if column_index not in mapping:
-            raise ValueError(f"Column index {column_index} is out of range. Valid indices: 0-{len(mapping)-1}")
-        return mapping[column_index]
+        mapping_lines = ["Column-to-vertex mapping (in insertion order):"]
+        for idx, vertex in mapping.items():
+            mapping_lines.append(f"  Column {idx} -> Vertex {vertex}")
+        return "\n".join(mapping_lines)
+
+    # def get_vertex_for_column(self, column_index: int) -> Tuple[float, float]:
+    #     mapping = self.get_vertex_mapping()
+    #     if column_index not in mapping:
+    #         raise ValueError(f"Column index {column_index} is out of range. Valid indices: 0-{len(mapping)-1}")
+    #     return mapping[column_index]
 
     def normalize_data(self, data: np.ndarray) -> np.ndarray:
         if len(data.shape) == 1:
@@ -142,18 +147,34 @@ class SimplexTreeClassifier:
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
-    def visualize_with_data_points(self, data_points: np.ndarray, title: str = "Simplex Tree with Data Points", ## NOTE-to-self: the visualization is not accurate on the grid because the root shape has a little bit of padding from the frame
-                                  figsize: Tuple[int, int] = (8, 5)):
+    def visualize_with_data_points(self, data_points: np.ndarray, title: str = "Simplex Tree with Data Points", figsize: Tuple[int, int] = (8, 5)):
         data_points_list = [tuple(point) for point in data_points]
         visualize_simplex_tree(self.tree, data_points=data_points_list, title=title, figsize=figsize)
+
+    def print_simplex_membership(self, data_points: List[Tuple[float, float]]) -> None:
+        for idx, pt in enumerate(data_points):
+            simplex = self.tree.find_containing_simplex(pt)
+            if simplex is None:
+                print(f"Point {pt} is outside the simplex tree")
+            else:
+                verts = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex.get_vertices_as_tuples()])
+                print(f"Point {idx} {pt} is in simplex: [{verts}]")
 
 
 if __name__ == "__main__":
 
-    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0,1)], subdivision_levels=2)
-    data_points = ((0.5,0.2), (0.1,0.4), (0.2, 0.7))
+
+    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0,1)], subdivision_levels=1)
+    classifier.tree.add_splitting_point((0.5, 0.3))
+
+    classifier.tree.add_splitting_point((0.61, 0.28))
+
+    # classifier.tree.add_splitting_point((0.5, 0.4))
+
+    data_points = ((0.5,0.2), (0.1,0.4))
     vertex_mapping = classifier.get_vertex_mapping()
     transformed_matrix = classifier.transform(data_points)
+    
     
     ## PRINTS: 
     print("Column-to-vertex mapping:")
@@ -165,7 +186,7 @@ if __name__ == "__main__":
     print("Matrix content:")
     matrix_array = transformed_matrix.toarray()
     for i, row in enumerate(matrix_array):
-        formatted_row = [f"{val:.1f}" for val in row]
+        formatted_row = [f"{val:.2f}" for val in row]
         print(f"[{' '.join(formatted_row)}]")
             
     print("\n" + "="*50)
@@ -178,6 +199,10 @@ if __name__ == "__main__":
     print("="*50) 
     classifier.visualize_with_data_points(data_points)
     
+    base_vertices = [(0,0), (1,0), (0,1)]
+    data_points = [(0.5,0.2), (0.1,0.4), (0.2,0.7)] 
+
+    # visualize_subdivision_levels(base_vertices, max_level=3, data_points=data_points)
 
 
     # X_iris_full = iris.data.features.values

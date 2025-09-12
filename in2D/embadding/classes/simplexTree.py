@@ -2,14 +2,15 @@ import numpy as np
 from typing import List, Optional, Iterator, Tuple
 import sys
 import os
+from embadding.utilss.visualization import visualize_simplex_tree
+from .simplex import Simplex
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
 
-from utilss.visualization import visualize_simplex_tree
-from simplex import Simplex
+
 
 class SimplexTree(Simplex):
     def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10):
@@ -84,13 +85,19 @@ class SimplexTree(Simplex):
         return f"{self.__class__.__name__}(vertices={vertex_str}, children={len(self.children)}, depth={self.depth})"
     
     def add_splitting_point(self, point: Tuple[float, float]) -> List['SimplexTree']:
+        if not self.is_leaf():
+            for child in self.children:
+                if child.point_inside_simplex(point):
+                    return child.add_splitting_point(point)
+
         if not self.point_inside_simplex(point):
             raise ValueError(f"Splitting point {point} is not inside this simplex")
+
         barycentric_coords = self.embed_point(point)
         if barycentric_coords is None:
             raise ValueError(f"Could not compute barycentric coordinates for splitting point {point}")
-        
-        if len(self.vertices) == 3  :  
+
+        if len(self.vertices) == 3:
             children = []
             for i in range(3):
                 v1 = tuple(self.vertices[i])

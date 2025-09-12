@@ -1,8 +1,7 @@
 from typing import List, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.collections import PatchCollection
-import numpy as np
+
 
 
 def visualize_simplex_tree(tree, splitting_point: Tuple[float, float] = None,
@@ -80,4 +79,42 @@ def _visualize_2d_children_recursive(node, ax, colors, depth: int):
         color = colors[(depth + i) % len(colors)]
         _visualize_2d_simplex(child_vertices, ax, color, alpha=0.2, linewidth=1, s=30)
         _visualize_2d_children_recursive(child, ax, colors, depth + 1)
+
+
+def visualize_subdivision_levels(base_vertices: List[Tuple[float, float]],
+                                  max_level: int = 3,
+                                  data_points: List[Tuple[float, float]] = None,
+                                  figsize: Tuple[int, int] = (12, 12)) -> None:
+
+    from embadding.classes.simplexTree import SimplexTree
+
+    levels = list(range(max_level + 1))[:4]
+    n_plots = len(levels)
+    n_cols = 2
+    n_rows = (n_plots + 1) // 2
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    axes = axes.flatten()
+
+    for ax, level in zip(axes, levels):
+        tree = SimplexTree(base_vertices)
+        tree.add_barycentric_centers_recursively(level)
+        _visualize_2d_simplex(base_vertices, ax, 'red', alpha=0.3, linewidth=2, s=20)
+        _visualize_2d_children_recursive(tree, ax, ['blue','green','orange','purple'], depth=0)
+
+        if data_points:
+            x_coords = [p[0] for p in data_points]
+            y_coords = [p[1] for p in data_points]
+            ax.scatter(x_coords, y_coords, color='black', s=60, edgecolors='white', zorder=10)
+
+        ax.set_aspect('equal')
+        ax.set_title(f"Subdivision Level {level}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    for ax in axes[n_plots:]:
+        ax.axis('off')
+
+    plt.tight_layout()
+    plt.show()
 

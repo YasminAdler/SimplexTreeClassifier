@@ -110,7 +110,7 @@ class Simplex:
         return embaddings
     
 
-    def point_inside_simplex(self, point: Tuple[float, float]) -> bool:
+    def point_inside_simplex(self, point):
         coords = self.embed_point(point)
         if coords is None:
             return False
