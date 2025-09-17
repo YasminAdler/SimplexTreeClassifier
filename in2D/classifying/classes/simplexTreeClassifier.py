@@ -114,19 +114,14 @@ class SimplexTreeClassifier:
         
         min_vals = np.min(data, axis=0)
         max_vals = np.max(data, axis=0)
-        
         normalized = (data - min_vals) / (max_vals - min_vals + 1e-10)
-        
-        sums = normalized[:, 0] + normalized[:, 1]
-        scale_factors = np.maximum(sums, 1.0)
-        normalized = normalized / scale_factors[:, np.newaxis]
         
         return normalized
     
     def fit(self, X: np.ndarray, y: np.ndarray):
         X_normalized = self.normalize_data(X)
         
-        X_transformed = self.transform(self.tree, X_normalized)
+        X_transformed = self.transform(X_normalized)
         print(X_transformed.shape)
         if self.classifier_type == 'svc':
             self.classifier = SVC(C=self.regularization, kernel='linear')
@@ -143,7 +138,7 @@ class SimplexTreeClassifier:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
         
         X_normalized = self.normalize_data(X)
-        X_transformed = self.transform(self.tree, X_normalized)
+        X_transformed = self.transform(X_normalized)
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
@@ -160,18 +155,27 @@ class SimplexTreeClassifier:
                 verts = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex.get_vertices_as_tuples()])
                 print(f"Point {idx} {pt} is in simplex: [{verts}]")
 
+    def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
+        """Get boundaries of all leaf simplices for visualization"""
+        boundaries = []
+        for leaf in self.leaf_simplexes:
+            vertices = leaf.get_vertices_as_tuples()
+            if len(vertices) >= 3:
+                boundaries.append(vertices)
+        return boundaries
+
 
 if __name__ == "__main__":
 
 
-    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0,1)], subdivision_levels=1)
-    classifier.tree.add_splitting_point((0.5, 0.3))
+    classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0.5,0.5)], subdivision_levels=1)
+    classifier.tree.add_splitting_point((0.62, 0.3))
 
-    classifier.tree.add_splitting_point((0.61, 0.28))
+    # classifier.tree.add_splitting_point((0.61, 0.28))
 
     # classifier.tree.add_splitting_point((0.5, 0.4))
 
-    data_points = ((0.5,0.2), (0.1,0.4))
+    data_points = ((0.43,0.2), (0.1,0.4))
     vertex_mapping = classifier.get_vertex_mapping()
     transformed_matrix = classifier.transform(data_points)
     
