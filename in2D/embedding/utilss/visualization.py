@@ -1,7 +1,9 @@
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from embedding.classes.simplex_tree import SimplexTree
+
+if TYPE_CHECKING:  # Avoid circular-import at runtime; only for type checkers
+    from embedding.classes.simplex_tree import SimplexTree
 
 
 

@@ -14,7 +14,7 @@ sys.path.insert(0, in2d_dir)
 from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
 from embedding.utilss.visualization import visualize_subdivision_levels
-from in2D.classifying.classes.plane_equation import PlaneEquation
+from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 
 class SimplexTreeClassifier:
     def __init__(self, vertices: List[Tuple[float, float]] = None, 
@@ -65,16 +65,16 @@ class SimplexTreeClassifier:
                 
                 simplex_vertices = containing_simplex.get_vertices_as_tuples()
                 
-                print(f"point: {point}")
-                formatted_vertices = [f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex_vertices]
-                print(f"containing_simplex: {formatted_vertices}")   
+                # print(f"point: {point}")
+                # formatted_vertices = [f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex_vertices]
+                # print(f"containing_simplex: {formatted_vertices}")   
                              
                 
                 for local_idx, coordinate in enumerate(data_point_embeddings):
                     vertex = simplex_vertices[local_idx]
                     global_idx = vertex_to_index[vertex]
                     barycentric_matrix[point_index, global_idx] = coordinate
-        print()
+        # print()  
         return barycentric_matrix
 
     def get_vertex_mapping(self) -> Dict[int, Tuple[float, float]]:
@@ -146,23 +146,66 @@ class SimplexTreeClassifier:
         data_points_list = [tuple(point) for point in data_points]
         visualize_simplex_tree(self.tree, data_points=data_points_list, title=title, figsize=figsize)
 
-    def print_simplex_membership(self, data_points: List[Tuple[float, float]]) -> None:
-        for idx, pt in enumerate(data_points):
-            simplex = self.tree.find_containing_simplex(pt)
-            if simplex is None:
-                print(f"Point {pt} is outside the simplex tree")
-            else:
-                verts = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex.get_vertices_as_tuples()])
-                print(f"Point {idx} {pt} is in simplex: [{verts}]")
+    # def print_simplex_membership(self, data_points: List[Tuple[float, float]]) -> None:
+    #     for idx, pt in enumerate(data_points):
+    #         simplex = self.tree.find_containing_simplex(pt)
+    #         if simplex is None:
+    #             print(f"Point {pt} is outside the simplex tree")
+    #         else:
+    #             verts = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex.get_vertices_as_tuples()])
+    #             print(f"Point {idx} {pt} is in simplex: [{verts}]")
 
     def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
-        """Get boundaries of all leaf simplices for visualization"""
         boundaries = []
         for leaf in self.leaf_simplexes:
             vertices = leaf.get_vertices_as_tuples()
             if len(vertices) >= 3:
                 boundaries.append(vertices)
         return boundaries
+    
+    def identify_svm_crossing_simplices(self) -> List[Dict]:
+        if self.classifier is None:
+            raise ValueError("Classifier not fitted yet. Call fit() first.")
+        
+        crossing_simplices = []
+        
+        for leaf in self.leaf_simplexes:
+            vertices = leaf.get_vertices_as_tuples()
+            vertex_matrix = self.transform(np.array(vertices))  # Get decision function values at vertices
+            decision_values = self.classifier.decision_function(vertex_matrix)
+            has_positive = any(val > 0 for val in decision_values)
+            has_negative = any(val < 0 for val in decision_values)
+            
+            if has_positive and has_negative:
+                crossing_simplices.append({
+                    'simplex': leaf,
+                    'vertices': vertices,
+                    'decision_values': decision_values,
+                })
+        
+        return crossing_simplices
+    
+    def compute_svm_plane_equations(self) -> List[Dict]:
+        crossing_simplices = self.identify_svm_crossing_simplices()
+        plane_equations = []
+        
+        for crossing_info in crossing_simplices:
+            simplex = crossing_info['simplex']
+            decision_values = crossing_info['decision_values']
+            
+            plane_eq = PlaneEquation(simplex)
+            
+            plane_coefficients = plane_eq.compute_plane_from_weights(decision_values)
+            
+            plane_equations.append({
+                'simplex': simplex,
+                'vertices': crossing_info['vertices'],
+                'plane_equation': plane_eq,
+                'coefficients': plane_coefficients,
+                'cartesian_form': plane_eq.get_cartesian_form()
+            })
+        
+        return plane_equations
 
 
 # if __name__ == "__main__":

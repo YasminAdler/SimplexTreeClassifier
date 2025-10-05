@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Optional, Iterator, Tuple
 import sys
 import os
-from embedding.utilss.visualization import visualize_simplex_tree
+# from embedding.utilss.visualization import visualize_simplex_tree
 from .simplex import Simplex
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -166,6 +166,8 @@ class SimplexTree(Simplex):
         _print(self)
 
 if __name__ == "__main__":
+    # Local import to avoid circular-import issues at package import time
+    from embedding.utilss.visualization import visualize_simplex_tree
     vertices = [(0, 0), (1, 0), (0.5, 1)] 
     tree = SimplexTree(vertices)
     
