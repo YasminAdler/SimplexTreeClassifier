@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import sys
 import os
+from collections import defaultdict
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 in2d_dir = os.path.join(current_dir, '..', '..')
@@ -74,14 +76,12 @@ class SimplexTreeClassifier:
                     vertex = simplex_vertices[local_idx]
                     global_idx = vertex_to_index[vertex]
                     barycentric_matrix[point_index, global_idx] = coordinate
-        # print()  
         return barycentric_matrix
 
     def get_vertex_mapping(self) -> Dict[int, Tuple[float, float]]:
         all_vertices = []
         vertex_to_index = {}
         
-        # Collect vertices in insertion order (breadth-first traversal order)
         for node in self.tree.traverse_breadth_first():
             for vertex in node.vertices:
                 vertex_tuple = tuple(vertex)
@@ -206,6 +206,280 @@ class SimplexTreeClassifier:
             })
         
         return plane_equations
+    
+    def check_polygon_convexity(self, vertices: List[Tuple[float, float]]) -> Dict:
+        if len(vertices) < 3:
+            return {'is_convex': True, 'reason': 'Less than 3 vertices'}
+        
+        n = len(vertices)
+        sign = None
+        
+        for i in range(n):
+            v1 = np.array(vertices[i])
+            v2 = np.array(vertices[(i + 1) % n])
+            v3 = np.array(vertices[(i + 2) % n])
+            
+            edge1 = v2 - v1
+            edge2 = v3 - v2
+            
+            cross_product_z = edge1[0] * edge2[1] - edge1[1] * edge2[0]
+            
+            if abs(cross_product_z) < 1e-10:
+                continue
+            
+            current_sign = np.sign(cross_product_z)
+            
+            if sign is None:
+                sign = current_sign
+            elif sign != current_sign:
+                return {
+                    'is_convex': False,
+                    'reason': f'Sign change at vertex {i+1}',
+                    'vertex_index': i + 1,
+                    'cross_product': cross_product_z
+                }
+        
+        return {'is_convex': True, 'reason': 'All cross products have same sign'}
+    
+    def find_redundant_planes(self, angle_threshold: float = 0.9, check_convexity: bool = True) -> List[Dict]:
+        plane_equations = self.compute_svm_plane_equations()
+        redundant_planes = []
+        
+        if check_convexity:
+            for i, plane in enumerate(plane_equations):
+                vertices = plane['vertices']
+                convexity = self.check_polygon_convexity(vertices)
+                
+                if not convexity['is_convex']:
+                    redundant_planes.append({
+                        'plane_index': i,
+                        'reason': 'non_convex',
+                        'convexity_details': convexity,
+                        'simplex': plane['simplex'],
+                        'vertices': vertices,
+                        'coefficients': plane['coefficients'],
+                        'equation': plane['cartesian_form']
+                    })
+        
+        for i in range(len(plane_equations)):
+            if any(r['plane_index'] == i for r in redundant_planes):
+                continue
+                
+            for j in range(i + 1, len(plane_equations)):
+                if any(r['plane_index'] == j for r in redundant_planes):
+                    continue
+                    
+                plane1 = plane_equations[i]
+                plane2 = plane_equations[j]
+                
+                coeffs1 = np.array(plane1['coefficients'])
+                coeffs2 = np.array(plane2['coefficients'])  
+                
+                norm1 = coeffs1[:2] / (np.linalg.norm(coeffs1[:2]) + 1e-10)
+                norm2 = coeffs2[:2] / (np.linalg.norm(coeffs2[:2]) + 1e-10)
+                
+                cosine_similarity = abs(np.dot(norm1, norm2))
+                
+                if cosine_similarity >= angle_threshold:
+                    redundant_planes.append({
+                        'plane_index': j,
+                        'reason': 'parallel_to',
+                        'parallel_to_index': i,
+                        'simplex': plane2['simplex'],
+                        'vertices': plane2['vertices'],
+                        'coefficients': coeffs2,
+                        'equation': plane2['cartesian_form'],
+                        'cosine_similarity': cosine_similarity,
+                        'angle_degrees': np.degrees(np.arccos(min(cosine_similarity, 1.0)))
+                    })
+        
+        return redundant_planes
+    
+    def analyze_plane_redundancy(self) -> Dict:
+        plane_equations = self.compute_svm_plane_equations()
+        redundant_info = self.find_redundant_planes()
+        
+        non_convex_planes = [r for r in redundant_info if r['reason'] == 'non_convex']
+        parallel_planes = [r for r in redundant_info if r['reason'] == 'parallel_to']
+        
+        redundant_indices = set(r['plane_index'] for r in redundant_info)
+        valid_indices = set(range(len(plane_equations))) - redundant_indices
+        
+        analysis = {
+            'total_planes': len(plane_equations),
+            'redundant_count': len(redundant_indices),
+            'valid_count': len(valid_indices),
+            'redundant_indices': sorted(redundant_indices),
+            'valid_indices': sorted(valid_indices),
+            'non_convex_count': len(non_convex_planes),
+            'parallel_count': len(parallel_planes),
+            'non_convex_planes': non_convex_planes,
+            'parallel_planes': parallel_planes,
+            'summary': {
+                'total': len(plane_equations),
+                'keep': len(valid_indices),
+                'remove': len(redundant_indices),
+                'remove_non_convex': len(non_convex_planes),
+                'remove_parallel': len(parallel_planes)
+            }
+        }
+        
+        return analysis
+    
+    def find_redundancy_groups(self, angle_threshold: float = 0.95, min_area: float = 0.001) -> Dict:
+
+        plane_equations = self.compute_svm_plane_equations()
+        
+        redundant_indices = set()
+        parallel_groups = {}
+        degenerate_simplices = set()
+        
+        # Check for degenerate (very small) simplices
+        for i, plane in enumerate(plane_equations):
+            vertices = plane['vertices']
+            # Calculate triangle area using cross product
+            if len(vertices) == 3:
+                v0, v1, v2 = [np.array(v) for v in vertices]
+                area = 0.5 * abs(np.cross(v1 - v0, v2 - v0))
+                if area < min_area:
+                    degenerate_simplices.add(i)
+                    redundant_indices.add(i)
+        
+        for i in range(len(plane_equations)):
+            if i in degenerate_simplices:
+                continue
+                
+            for j in range(i + 1, len(plane_equations)):
+                if j in degenerate_simplices:
+                    continue
+                    
+                plane1 = plane_equations[i]
+                plane2 = plane_equations[j]
+                
+                coeffs1 = np.array(plane1['coefficients'])
+                coeffs2 = np.array(plane2['coefficients'])
+                
+                # Normalize the normal vectors (first two components)
+                norm1 = coeffs1[:2] / (np.linalg.norm(coeffs1[:2]) + 1e-10)
+                norm2 = coeffs2[:2] / (np.linalg.norm(coeffs2[:2]) + 1e-10)
+                
+                cosine_similarity = abs(np.dot(norm1, norm2))
+                
+                if cosine_similarity >= angle_threshold:
+                    # Keep the first one, mark the second as redundant
+                    if i not in parallel_groups:
+                        parallel_groups[i] = []
+                    parallel_groups[i].append(j)
+                    redundant_indices.add(j)
+        
+        all_plane_indices = set(range(len(plane_equations)))
+        planes_to_keep = all_plane_indices - redundant_indices
+        
+        return {
+            'plane_equations': plane_equations,
+            'planes_to_keep': sorted(planes_to_keep),
+            'planes_to_remove': sorted(redundant_indices),
+            'degenerate_simplices': sorted(degenerate_simplices),
+            'parallel_groups': parallel_groups,
+            'total_planes': len(plane_equations),
+            'kept_planes': len(planes_to_keep),
+            'removed_planes': len(redundant_indices),
+            'angle_threshold': angle_threshold,
+            'min_area': min_area
+        }
+    
+    def visualize_redundant_planes(self, check_convexity: bool = True) -> None:
+        redundancy_result = self.find_redundancy_groups(check_convexity)
+        plane_equations = redundancy_result['plane_equations']
+        
+        if not plane_equations:
+            print("No crossing planes to visualize")
+            return
+            
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Extract results
+        planes_to_keep = set(redundancy_result['planes_to_keep'])
+        planes_to_remove = set(redundancy_result['planes_to_remove'])
+        non_convex_removed = set(redundancy_result['non_convex_indices'])
+        
+        ax1.set_title('All Planes (Green=Valid/Convex, Red=Non-Convex)')
+        ax2.set_title('After Non-Convex Removal (Valid Planes Only)')
+        
+        # Draw simplex boundaries
+        for ax in [ax1, ax2]:
+            boundaries = self.get_simplex_boundaries()
+            for boundary in boundaries:
+                if len(boundary) >= 3:
+                    closed = boundary + [boundary[0]]
+                    xs, ys = zip(*closed)
+                    ax.plot(xs, ys, 'gray', linewidth=0.5, alpha=0.3)
+        
+        for i, plane in enumerate(plane_equations):
+            coeffs = plane['coefficients']
+            a, b, c = coeffs
+            
+            if i in planes_to_keep:
+                color = 'lime'
+                alpha = 0.8
+                linewidth = 2.5
+                label = f'Valid {i}' if i < 3 else ''
+            else:  # Non-convex
+                color = 'red'
+                alpha = 0.5
+                linewidth = 1.5
+                label = f'Non-convex {i}' if i < 3 else ''
+            
+            # Calculate line endpoints
+            if abs(b) > abs(a):
+                x_line = np.array([0, 1])
+                y_line = -(a * x_line + c) / b
+            else:
+                y_line = np.array([0, 1])
+                x_line = -(b * y_line + c) / a
+            
+            # Draw on first subplot (all planes)
+            ax1.plot(x_line, y_line, color=color, linewidth=linewidth, 
+                    alpha=alpha, label=label)
+            
+            # Mark non-convex simplex vertices with red dots
+            if i in non_convex_removed:
+                vertices = plane['vertices']
+                for vertex in vertices:
+                    ax1.plot(vertex[0], vertex[1], 'ro', markersize=5)
+            
+            # Draw on second subplot (only valid planes)
+            if i in planes_to_keep:
+                ax2.plot(x_line, y_line, color='lime', linewidth=2.5, alpha=0.8)
+        
+        # Set axis properties
+        for ax in [ax1, ax2]:
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.3)
+        
+        # Add summary text
+        summary_text1 = (f'Total: {redundancy_result["total_planes"]}\n'
+                         f'Valid (Convex): {redundancy_result["kept_planes"]}\n'
+                         f'Non-convex: {len(non_convex_removed)}')
+        ax1.text(0.02, 0.98, summary_text1, 
+                transform=ax1.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        summary_text2 = (f'Final: {redundancy_result["kept_planes"]} planes\n'
+                        f'({redundancy_result["removed_planes"]} non-convex removed)')
+        ax2.text(0.02, 0.98, summary_text2, 
+                transform=ax2.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Add legend if not too many planes
+        if len(plane_equations) < 10:
+            ax1.legend(loc='upper right', fontsize=8)
+        
+        plt.suptitle(f'Non-Convex Simplex Detection and Removal', fontsize=14)
+        plt.tight_layout()
+        plt.show()
 
 
 # if __name__ == "__main__":
