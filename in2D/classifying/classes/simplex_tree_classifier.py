@@ -1,13 +1,9 @@
 import numpy as np
-from typing import List, Tuple, Dict
-from scipy.sparse import lil_matrix
-from sklearn.svm import SVC, LinearSVC
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+from typing import List, Tuple, Dict, Optional
+from scipy.sparse import lil_matrix, issparse
+from sklearn.svm import LinearSVC
 import sys
 import os
-from collections import defaultdict
-
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 in2d_dir = os.path.join(current_dir, '..', '..')
@@ -15,128 +11,162 @@ sys.path.insert(0, in2d_dir)
 
 from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
-from embedding.utilss.visualization import visualize_subdivision_levels
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
+from in2D.classifying.classes.utilss.convexity_check import check_convexity_between_simplices
+
 
 class SimplexTreeClassifier:
     def __init__(self, vertices: List[Tuple[float, float]] = None, 
                  regularization=0.01, 
                  subdivision_levels=1, 
-                 classifier_type='svc'):
+                 classifier_type='linear_svc'):
         if vertices is None:
-            vertices = [(0, 0), (1, 0), (0.5, 1)]   # default to triangle if no vertices provided
-        
+            vertices = [(0, 0), (1, 0), (0.5, 1)]
         self.tree = SimplexTree(vertices)
-        self.dimension = 2  
         self.regularization = regularization
         self.subdivision_levels = subdivision_levels
         self.classifier_type = classifier_type
         self.classifier = None
         self.leaf_simplexes = []
-        self.parent_simplexes = None 
+        self._processed_pairs_cache = set()
+        self.all_nodes_lookup = {}
+        self._containing_simplex_cache = {}
         
         if self.subdivision_levels > 0:
             self.tree.add_barycentric_centers_recursively(self.subdivision_levels)
-            
-        self._update_leaf_simplexes()
+        self._build_node_lookup()
     
-    def _update_leaf_simplexes(self):
-        self.leaf_simplexes = self.tree.get_leaves()
+    @property
+    def vertex_registry(self):
+        return self.tree.vertex_registry
     
-    def transform(self, data_points) -> lil_matrix:
-        simplex_tree = self.tree
-        all_vertices = []
-        vertex_to_index = {}
-        
-        for node in simplex_tree.traverse_breadth_first():
-            for vertex in node.vertices:
-                vertex_tuple = tuple(vertex)
-                if vertex_tuple not in vertex_to_index:
-                    vertex_to_index[vertex_tuple] = len(all_vertices)
-                    all_vertices.append(vertex_tuple)
-                
-        max_vertices = len(all_vertices)
-        barycentric_matrix = lil_matrix((len(data_points), max_vertices))
-        
-        for point_index in range(len(data_points)): 
-            point = tuple(data_points[point_index])
-            containing_simplex = simplex_tree.find_containing_simplex(point)
+    @property
+    def all_vertices(self) -> List[Tuple[float, float]]:
+        return [self.vertex_registry.get_vertex_as_tuple(i) for i in range(len(self.vertex_registry))]
+    
+    @property
+    def vertex_to_index(self) -> Dict[Tuple, int]:
+        return self.vertex_registry.vertex_to_index
 
+    def _build_node_lookup(self):
+        self.all_nodes_lookup.clear()
+        self.leaf_simplexes.clear()
+        self._containing_simplex_cache.clear()
+        
+        for node in self.tree.traverse_breadth_first():
+            vertex_key = frozenset(node.vertex_indices)
+            self.all_nodes_lookup[vertex_key] = node
+            if node.is_leaf():
+                self.leaf_simplexes.append(node)
+
+
+    
+    def get_vertex_decision_values(self, vertices_list, weights):
+        decision_values = []
+        for vertex in vertices_list:
+            vertex_tuple = tuple(vertex) if not isinstance(vertex, tuple) else vertex
+            idx = self.vertex_to_index[vertex_tuple]
+            decision_values.append(weights[idx])
+        return np.array(decision_values)
+
+    def _get_simplex_node(self, simplex_vertices):
+        indices = self._vertices_to_indices(simplex_vertices)
+        vertex_key = frozenset(indices)
+        return self.all_nodes_lookup.get(vertex_key, None)
+
+    def _vertices_to_indices(self, vertices):
+        indices = []
+        for vertex in vertices:
+            vertex_tuple = tuple(vertex) if not isinstance(vertex, tuple) else vertex
+            indices.append(self.vertex_to_index[vertex_tuple])
+        return indices
+
+    def find_adjacent_simplices(self, simplex_points): ## TODO: Check if the sibling of the parent is not found is the reason for the not finding the nonconvex
+        simplex_node = self._get_simplex_node(simplex_points)
+        if simplex_node is None:
+            return []
+        adjacent_simplex_indices = []
+        dimension = len(simplex_points) - 1
+        max_adjacent = dimension + 1
+        simplex_indices_set = set(self._vertices_to_indices(simplex_points))
+        visited_nodes = set()
+
+        if simplex_node.parent is not None:
+            for sibling in simplex_node.parent.children:
+                if sibling != simplex_node and sibling.is_leaf():
+                    sibling_indices = list(sibling.vertex_indices)
+                    adjacent_simplex_indices.append(sibling_indices)
+                    visited_nodes.add(id(sibling))
+                    if len(adjacent_simplex_indices) >= max_adjacent:
+                        return adjacent_simplex_indices[:max_adjacent]
+
+        current_ancestor = simplex_node.parent
+        while current_ancestor is not None and len(adjacent_simplex_indices) < max_adjacent:
+            for descendant in current_ancestor.traverse_breadth_first():
+                if (descendant.is_leaf() and
+                    descendant != simplex_node and
+                    id(descendant) not in visited_nodes):
+                    descendant_indices_set = set(descendant.vertex_indices)
+                    shared_indices = len(simplex_indices_set.intersection(descendant_indices_set))
+                    if shared_indices == dimension:
+                        descendant_indices = list(descendant.vertex_indices)
+                        adjacent_simplex_indices.append(descendant_indices)
+                        visited_nodes.add(id(descendant))
+                        if len(adjacent_simplex_indices) >= max_adjacent:
+                            break
+            current_ancestor = current_ancestor.parent
+        return adjacent_simplex_indices[:max_adjacent]
+
+    def transform(self, data_points) -> lil_matrix:
+        max_vertices = len(self.vertex_registry)
+        barycentric_matrix = lil_matrix((len(data_points), max_vertices))
+        for point_index in range(len(data_points)):
+            point = tuple(data_points[point_index])
+            if point in self._containing_simplex_cache:
+                containing_simplex = self._containing_simplex_cache[point]
+            else:
+                containing_simplex = self.tree.find_containing_simplex(point)
+                self._containing_simplex_cache[point] = containing_simplex
             if containing_simplex is not None:
                 data_point_embeddings = containing_simplex.embed_point(point)
-                
-                simplex_vertices = containing_simplex.get_vertices_as_tuples()
-                
-                # print(f"point: {point}")
-                # formatted_vertices = [f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex_vertices]
-                # print(f"containing_simplex: {formatted_vertices}")   
-                             
-                
                 for local_idx, coordinate in enumerate(data_point_embeddings):
-                    vertex = simplex_vertices[local_idx]
-                    global_idx = vertex_to_index[vertex]
+                    global_idx = containing_simplex.vertex_indices[local_idx]
                     barycentric_matrix[point_index, global_idx] = coordinate
         return barycentric_matrix
 
-    def get_vertex_mapping(self) -> Dict[int, Tuple[float, float]]:
-        all_vertices = []
-        vertex_to_index = {}
-        
-        for node in self.tree.traverse_breadth_first():
-            for vertex in node.vertices:
-                vertex_tuple = tuple(vertex)
-                if vertex_tuple not in vertex_to_index:
-                    vertex_to_index[vertex_tuple] = len(all_vertices)
-                    all_vertices.append(vertex_tuple)
-
-        vertex_mapping = {}
-        for idx, vertex in enumerate(all_vertices):
-            vertex_mapping[idx] = vertex
-
-        return vertex_mapping
-
-    def get_column_to_vertex_mapping(self) -> str:
-        mapping = self.get_vertex_mapping()
-        mapping_lines = ["Column-to-vertex mapping (in insertion order):"]
-        for idx, vertex in mapping.items():
-            mapping_lines.append(f"  Column {idx} -> Vertex {vertex}")
-        return "\n".join(mapping_lines)
-
-    # def get_vertex_for_column(self, column_index: int) -> Tuple[float, float]:
-    #     mapping = self.get_vertex_mapping()
-    #     if column_index not in mapping:
-    #         raise ValueError(f"Column index {column_index} is out of range. Valid indices: 0-{len(mapping)-1}")
-    #     return mapping[column_index]
+    def _compute_decision_values(self, feature_matrix) -> np.ndarray:
+        if issparse(feature_matrix):
+            feature_matrix = feature_matrix.toarray()
+        coef = getattr(self.classifier, "coef_", None)
+        if coef is None:
+            raise AttributeError("Classifier does not expose coef_ .")
+        coef_vector = np.asarray(coef).reshape(-1)
+        decision_values = feature_matrix @ coef_vector
+        return np.asarray(decision_values).reshape(-1)
 
     def normalize_data(self, data: np.ndarray) -> np.ndarray:
         if len(data.shape) == 1:
             data = data.reshape(1, -1)
-        
         min_vals = np.min(data, axis=0)
         max_vals = np.max(data, axis=0)
         normalized = (data - min_vals) / (max_vals - min_vals + 1e-10)
-        
         return normalized
-    
+
     def fit(self, X: np.ndarray, y: np.ndarray):
         X_normalized = self.normalize_data(X)
-        
+        self._processed_pairs_cache.clear()
         X_transformed = self.transform(X_normalized)
         print(X_transformed.shape)
-        if self.classifier_type == 'svc':
-            self.classifier = SVC(C=self.regularization, kernel='linear')
-        elif self.classifier_type == 'linear_svc':
+        if self.classifier_type == 'linear_svc':
             self.classifier = LinearSVC(C=self.regularization)
         else:
             raise ValueError(f"Unknown classifier type: {self.classifier_type}")
-        
         self.classifier.fit(X_transformed, y)
         return self
-    
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
-        
         X_normalized = self.normalize_data(X)
         X_transformed = self.transform(X_normalized)
         predictions = self.classifier.predict(X_transformed)
@@ -146,15 +176,6 @@ class SimplexTreeClassifier:
         data_points_list = [tuple(point) for point in data_points]
         visualize_simplex_tree(self.tree, data_points=data_points_list, title=title, figsize=figsize)
 
-    # def print_simplex_membership(self, data_points: List[Tuple[float, float]]) -> None:
-    #     for idx, pt in enumerate(data_points):
-    #         simplex = self.tree.find_containing_simplex(pt)
-    #         if simplex is None:
-    #             print(f"Point {pt} is outside the simplex tree")
-    #         else:
-    #             verts = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in simplex.get_vertices_as_tuples()])
-    #             print(f"Point {idx} {pt} is in simplex: [{verts}]")
-
     def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
         boundaries = []
         for leaf in self.leaf_simplexes:
@@ -162,41 +183,62 @@ class SimplexTreeClassifier:
             if len(vertices) >= 3:
                 boundaries.append(vertices)
         return boundaries
-    
+
+    def _simplex_crosses_boundary(self, simplex_node, weights) -> bool:
+        decision_values = [weights[idx] for idx in simplex_node.vertex_indices]
+        has_positive = any(val > 0 for val in decision_values)
+        has_negative = any(val < 0 for val in decision_values)
+        return has_positive and has_negative
+
+    def _get_simplex_class(self, simplex_node, weights) -> bool:
+        vals = [weights[i] for i in simplex_node.vertex_indices]
+        is_positive = any(v > 0 for v in vals) or all(v == 0 for v in vals)
+        return is_positive
+
+    def _are_siblings_redundant(self, parent_node, weights) -> bool:
+        if not parent_node.children:
+            return False
+        
+        child0 = parent_node.children[0]
+        if self._simplex_crosses_boundary(child0, weights):
+            return False
+        
+        first_child_class = self._get_simplex_class(child0, weights)
+        
+        for child in parent_node.children[1:]:
+            if self._simplex_crosses_boundary(child, weights):
+                return False
+            
+            child_class = self._get_simplex_class(child, weights)
+            if child_class != first_child_class:
+                return False
+                
+        return True
+
     def identify_svm_crossing_simplices(self) -> List[Dict]:
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
-        
         crossing_simplices = []
-        
+        weights = self.classifier.coef_[0]
         for leaf in self.leaf_simplexes:
-            vertices = leaf.get_vertices_as_tuples()
-            vertex_matrix = self.transform(np.array(vertices))  # Get decision function values at vertices
-            decision_values = self.classifier.decision_function(vertex_matrix)
-            has_positive = any(val > 0 for val in decision_values)
-            has_negative = any(val < 0 for val in decision_values)
-            
-            if has_positive and has_negative:
+            if self._simplex_crosses_boundary(leaf, weights):
+                vertices = leaf.get_vertices_as_tuples()
+                decision_values = self.get_vertex_decision_values(vertices, weights)
                 crossing_simplices.append({
                     'simplex': leaf,
                     'vertices': vertices,
                     'decision_values': decision_values,
                 })
-        
         return crossing_simplices
-    
+
     def compute_svm_plane_equations(self) -> List[Dict]:
         crossing_simplices = self.identify_svm_crossing_simplices()
+        weights = self.classifier.coef_[0]
         plane_equations = []
-        
         for crossing_info in crossing_simplices:
             simplex = crossing_info['simplex']
-            decision_values = crossing_info['decision_values']
-            
             plane_eq = PlaneEquation(simplex)
-            
-            plane_coefficients = plane_eq.compute_plane_from_weights(decision_values)
-            
+            plane_coefficients = plane_eq.compute_plane_from_weights(weights)
             plane_equations.append({
                 'simplex': simplex,
                 'vertices': crossing_info['vertices'],
@@ -204,370 +246,88 @@ class SimplexTreeClassifier:
                 'coefficients': plane_coefficients,
                 'cartesian_form': plane_eq.get_cartesian_form()
             })
-        
         return plane_equations
-    
-    def check_polygon_convexity(self, vertices: List[Tuple[float, float]]) -> Dict:
-        if len(vertices) < 3:
-            return {'is_convex': True, 'reason': 'Less than 3 vertices'}
+
+    def get_simplex_plane_coefficients(self, simplex_node) -> np.ndarray:
+        weights = self.classifier.coef_[0]
+        plane_eq = PlaneEquation(simplex_node)
+        return plane_eq.compute_plane_from_weights(weights)
+
+    def get_adjacent_crossing_simplices(self, target_simplex_vertices: np.ndarray) -> List[Dict]:
+        adjacent_simplices_indices = self.find_adjacent_simplices(target_simplex_vertices)
+        adjacent_crossing = []
+        weights = self.classifier.coef_[0]
         
-        n = len(vertices)
-        sign = None
-        
-        for i in range(n):
-            v1 = np.array(vertices[i])
-            v2 = np.array(vertices[(i + 1) % n])
-            v3 = np.array(vertices[(i + 2) % n])
+        for adj_indices in adjacent_simplices_indices:
+            adj_vertices = [self.all_vertices[idx] for idx in adj_indices]
+            adj_simplex_node = self._get_simplex_node(adj_vertices)
             
-            edge1 = v2 - v1
-            edge2 = v3 - v2
+            if adj_simplex_node and self._simplex_crosses_boundary(adj_simplex_node, weights):
+                plane_coeffs = self.get_simplex_plane_coefficients(adj_simplex_node)
+                adjacent_crossing.append({
+                    'simplex': adj_simplex_node,
+                    'vertices': adj_vertices,
+                    'plane_coefficients': plane_coeffs
+                })
+        
+        return adjacent_crossing
+
+    def find_nonconvex_simplices(self, target_simplex_vertices: np.ndarray) -> List[Dict]:
+        target_simplex = self._get_simplex_node(target_simplex_vertices)
+        weights = self.classifier.coef_[0]
+        adjacent_simplices = self.get_adjacent_crossing_simplices(target_simplex_vertices)
+        
+        nonconvex_pairs = []
+        for adjacent in adjacent_simplices:
+            adjacent_simplex = adjacent['simplex']
+            result = check_convexity_between_simplices(target_simplex, adjacent_simplex, weights, global_tree=self.tree)
             
-            cross_product_z = edge1[0] * edge2[1] - edge1[1] * edge2[0]
+            if not result['is_convex']:
+                nonconvex_pairs.append({
+                    'target_simplex': target_simplex,
+                    'adjacent_simplex': adjacent_simplex,
+                    'test_point': result['test_point'],
+                    'type': 'non-convex',
+                })
+        
+        return nonconvex_pairs
+
+    def find_redundant_simplices(self) -> set:
+        if self.classifier is None:
+            raise ValueError("Classifier not fitted yet.")
+        weights = self.classifier.coef_[0]
+        
+        redundant_keys = set()
+        leaf_parents = set()
+        for leaf in self.leaf_simplexes:
+            if leaf.parent:
+                leaf_parents.add(leaf.parent)
+        
+        for parent in leaf_parents:
+            if self._are_siblings_redundant(parent, weights):
+                for child in parent.children:
+                    redundant_keys.add(frozenset(child.vertex_indices))
+        
+        return redundant_keys
+
+    def prune_redundant_leaves(self):
+        if self.classifier is None:
+            raise ValueError("Classifier not fitted yet.")
+        
+        weights = self.classifier.coef_[0]
+        has_changed = True
+        
+        while has_changed:
+            has_changed = False
+            leaf_parents = set()
+            for leaf in self.leaf_simplexes:
+                if leaf.parent:
+                    leaf_parents.add(leaf.parent)
             
-            if abs(cross_product_z) < 1e-10:
-                continue
+            for parent in leaf_parents:
+                if self._are_siblings_redundant(parent, weights):
+                    parent.children = []
+                    has_changed = True
             
-            current_sign = np.sign(cross_product_z)
-            
-            if sign is None:
-                sign = current_sign
-            elif sign != current_sign:
-                return {
-                    'is_convex': False,
-                    'reason': f'Sign change at vertex {i+1}',
-                    'vertex_index': i + 1,
-                    'cross_product': cross_product_z
-                }
-        
-        return {'is_convex': True, 'reason': 'All cross products have same sign'}
-    
-    def find_redundant_planes(self, angle_threshold: float = 0.9, check_convexity: bool = True) -> List[Dict]:
-        plane_equations = self.compute_svm_plane_equations()
-        redundant_planes = []
-        
-        if check_convexity:
-            for i, plane in enumerate(plane_equations):
-                vertices = plane['vertices']
-                convexity = self.check_polygon_convexity(vertices)
-                
-                if not convexity['is_convex']:
-                    redundant_planes.append({
-                        'plane_index': i,
-                        'reason': 'non_convex',
-                        'convexity_details': convexity,
-                        'simplex': plane['simplex'],
-                        'vertices': vertices,
-                        'coefficients': plane['coefficients'],
-                        'equation': plane['cartesian_form']
-                    })
-        
-        for i in range(len(plane_equations)):
-            if any(r['plane_index'] == i for r in redundant_planes):
-                continue
-                
-            for j in range(i + 1, len(plane_equations)):
-                if any(r['plane_index'] == j for r in redundant_planes):
-                    continue
-                    
-                plane1 = plane_equations[i]
-                plane2 = plane_equations[j]
-                
-                coeffs1 = np.array(plane1['coefficients'])
-                coeffs2 = np.array(plane2['coefficients'])  
-                
-                norm1 = coeffs1[:2] / (np.linalg.norm(coeffs1[:2]) + 1e-10)
-                norm2 = coeffs2[:2] / (np.linalg.norm(coeffs2[:2]) + 1e-10)
-                
-                cosine_similarity = abs(np.dot(norm1, norm2))
-                
-                if cosine_similarity >= angle_threshold:
-                    redundant_planes.append({
-                        'plane_index': j,
-                        'reason': 'parallel_to',
-                        'parallel_to_index': i,
-                        'simplex': plane2['simplex'],
-                        'vertices': plane2['vertices'],
-                        'coefficients': coeffs2,
-                        'equation': plane2['cartesian_form'],
-                        'cosine_similarity': cosine_similarity,
-                        'angle_degrees': np.degrees(np.arccos(min(cosine_similarity, 1.0)))
-                    })
-        
-        return redundant_planes
-    
-    def analyze_plane_redundancy(self) -> Dict:
-        plane_equations = self.compute_svm_plane_equations()
-        redundant_info = self.find_redundant_planes()
-        
-        non_convex_planes = [r for r in redundant_info if r['reason'] == 'non_convex']
-        parallel_planes = [r for r in redundant_info if r['reason'] == 'parallel_to']
-        
-        redundant_indices = set(r['plane_index'] for r in redundant_info)
-        valid_indices = set(range(len(plane_equations))) - redundant_indices
-        
-        analysis = {
-            'total_planes': len(plane_equations),
-            'redundant_count': len(redundant_indices),
-            'valid_count': len(valid_indices),
-            'redundant_indices': sorted(redundant_indices),
-            'valid_indices': sorted(valid_indices),
-            'non_convex_count': len(non_convex_planes),
-            'parallel_count': len(parallel_planes),
-            'non_convex_planes': non_convex_planes,
-            'parallel_planes': parallel_planes,
-            'summary': {
-                'total': len(plane_equations),
-                'keep': len(valid_indices),
-                'remove': len(redundant_indices),
-                'remove_non_convex': len(non_convex_planes),
-                'remove_parallel': len(parallel_planes)
-            }
-        }
-        
-        return analysis
-    
-    def find_redundancy_groups(self, angle_threshold: float = 0.95, min_area: float = 0.001) -> Dict:
-
-        plane_equations = self.compute_svm_plane_equations()
-        
-        redundant_indices = set()
-        parallel_groups = {}
-        degenerate_simplices = set()
-        
-        # Check for degenerate (very small) simplices
-        for i, plane in enumerate(plane_equations):
-            vertices = plane['vertices']
-            # Calculate triangle area using cross product
-            if len(vertices) == 3:
-                v0, v1, v2 = [np.array(v) for v in vertices]
-                area = 0.5 * abs(np.cross(v1 - v0, v2 - v0))
-                if area < min_area:
-                    degenerate_simplices.add(i)
-                    redundant_indices.add(i)
-        
-        for i in range(len(plane_equations)):
-            if i in degenerate_simplices:
-                continue
-                
-            for j in range(i + 1, len(plane_equations)):
-                if j in degenerate_simplices:
-                    continue
-                    
-                plane1 = plane_equations[i]
-                plane2 = plane_equations[j]
-                
-                coeffs1 = np.array(plane1['coefficients'])
-                coeffs2 = np.array(plane2['coefficients'])
-                
-                # Normalize the normal vectors (first two components)
-                norm1 = coeffs1[:2] / (np.linalg.norm(coeffs1[:2]) + 1e-10)
-                norm2 = coeffs2[:2] / (np.linalg.norm(coeffs2[:2]) + 1e-10)
-                
-                cosine_similarity = abs(np.dot(norm1, norm2))
-                
-                if cosine_similarity >= angle_threshold:
-                    # Keep the first one, mark the second as redundant
-                    if i not in parallel_groups:
-                        parallel_groups[i] = []
-                    parallel_groups[i].append(j)
-                    redundant_indices.add(j)
-        
-        all_plane_indices = set(range(len(plane_equations)))
-        planes_to_keep = all_plane_indices - redundant_indices
-        
-        return {
-            'plane_equations': plane_equations,
-            'planes_to_keep': sorted(planes_to_keep),
-            'planes_to_remove': sorted(redundant_indices),
-            'degenerate_simplices': sorted(degenerate_simplices),
-            'parallel_groups': parallel_groups,
-            'total_planes': len(plane_equations),
-            'kept_planes': len(planes_to_keep),
-            'removed_planes': len(redundant_indices),
-            'angle_threshold': angle_threshold,
-            'min_area': min_area
-        }
-    
-    def visualize_redundant_planes(self, check_convexity: bool = True) -> None:
-        redundancy_result = self.find_redundancy_groups(check_convexity)
-        plane_equations = redundancy_result['plane_equations']
-        
-        if not plane_equations:
-            print("No crossing planes to visualize")
-            return
-            
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-        
-        # Extract results
-        planes_to_keep = set(redundancy_result['planes_to_keep'])
-        planes_to_remove = set(redundancy_result['planes_to_remove'])
-        non_convex_removed = set(redundancy_result['non_convex_indices'])
-        
-        ax1.set_title('All Planes (Green=Valid/Convex, Red=Non-Convex)')
-        ax2.set_title('After Non-Convex Removal (Valid Planes Only)')
-        
-        # Draw simplex boundaries
-        for ax in [ax1, ax2]:
-            boundaries = self.get_simplex_boundaries()
-            for boundary in boundaries:
-                if len(boundary) >= 3:
-                    closed = boundary + [boundary[0]]
-                    xs, ys = zip(*closed)
-                    ax.plot(xs, ys, 'gray', linewidth=0.5, alpha=0.3)
-        
-        for i, plane in enumerate(plane_equations):
-            coeffs = plane['coefficients']
-            a, b, c = coeffs
-            
-            if i in planes_to_keep:
-                color = 'lime'
-                alpha = 0.8
-                linewidth = 2.5
-                label = f'Valid {i}' if i < 3 else ''
-            else:  # Non-convex
-                color = 'red'
-                alpha = 0.5
-                linewidth = 1.5
-                label = f'Non-convex {i}' if i < 3 else ''
-            
-            # Calculate line endpoints
-            if abs(b) > abs(a):
-                x_line = np.array([0, 1])
-                y_line = -(a * x_line + c) / b
-            else:
-                y_line = np.array([0, 1])
-                x_line = -(b * y_line + c) / a
-            
-            # Draw on first subplot (all planes)
-            ax1.plot(x_line, y_line, color=color, linewidth=linewidth, 
-                    alpha=alpha, label=label)
-            
-            # Mark non-convex simplex vertices with red dots
-            if i in non_convex_removed:
-                vertices = plane['vertices']
-                for vertex in vertices:
-                    ax1.plot(vertex[0], vertex[1], 'ro', markersize=5)
-            
-            # Draw on second subplot (only valid planes)
-            if i in planes_to_keep:
-                ax2.plot(x_line, y_line, color='lime', linewidth=2.5, alpha=0.8)
-        
-        # Set axis properties
-        for ax in [ax1, ax2]:
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
-            ax.set_aspect('equal')
-            ax.grid(True, alpha=0.3)
-        
-        # Add summary text
-        summary_text1 = (f'Total: {redundancy_result["total_planes"]}\n'
-                         f'Valid (Convex): {redundancy_result["kept_planes"]}\n'
-                         f'Non-convex: {len(non_convex_removed)}')
-        ax1.text(0.02, 0.98, summary_text1, 
-                transform=ax1.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        summary_text2 = (f'Final: {redundancy_result["kept_planes"]} planes\n'
-                        f'({redundancy_result["removed_planes"]} non-convex removed)')
-        ax2.text(0.02, 0.98, summary_text2, 
-                transform=ax2.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        # Add legend if not too many planes
-        if len(plane_equations) < 10:
-            ax1.legend(loc='upper right', fontsize=8)
-        
-        plt.suptitle(f'Non-Convex Simplex Detection and Removal', fontsize=14)
-        plt.tight_layout()
-        plt.show()
-
-
-# if __name__ == "__main__":
-
-
-#     classifier = SimplexTreeClassifier(vertices=[(0,0), (1,0), (0.5,0.5)], subdivision_levels=1)
-#     classifier.tree.add_splitting_point((0.62, 0.3))
-
-#     # classifier.tree.add_splitting_point((0.61, 0.28))
-
-#     # classifier.tree.add_splitting_point((0.5, 0.4))
-
-#     data_points = ((0.43,0.2), (0.1,0.4))
-#     vertex_mapping = classifier.get_vertex_mapping()
-#     transformed_matrix = classifier.transform(data_points)
-    
-    
-#     ## PRINTS: 
-#     print("Column-to-vertex mapping:")
-#     for col_idx, vertex in vertex_mapping.items():
-#         print(f"  Column {col_idx} -> Vertex ({vertex[0]:.1f}, {vertex[1]:.1f})")
-        
-#     print()
-#     print("Barycentric matrix shape:", transformed_matrix.shape)
-#     print("Matrix content:")
-#     matrix_array = transformed_matrix.toarray()
-#     for i, row in enumerate(matrix_array):
-#         formatted_row = [f"{val:.2f}" for val in row]
-#         print(f"[{' '.join(formatted_row)}]")
-            
-#     print("\n" + "="*50)
-#     print("TREE STRUCTURE:")
-#     print("="*50)
-#     classifier.tree.print_tree()
-
-#     print("\n" + "="*50)
-#     print("VISUALIZATION:")
-#     print("="*50) 
-#     classifier.visualize_with_data_points(data_points)
-    
-#     base_vertices = [(0,0), (1,0), (0,1)]
-#     data_points = [(0.5,0.2), (0.1,0.4), (0.2,0.7)] 
-
-#####################################################################################
-    # visualize_subdivision_levels(base_vertices, max_level=3, data_points=data_points)
-
-
-    # X_iris_full = iris.data.features.values
-    # y_iris_full = iris.data.targets.values.ravel()
-    
-    # X_iris = X_iris_full[:, :2]  # Use first 2 features
-    # y_iris_binary = (y_iris_full == 'Iris-setosa').astype(int)
-    
-    # X_iris_min, X_iris_max = X_iris.min(axis=0), X_iris.max(axis=0)
-    # X_iris_normalized = (X_iris - X_iris_min) / (X_iris_max - X_iris_min)
-    # X_iris_scaled = X_iris_normalized * 0.8 + 0.1
-    
-    # iris_valid_points = []
-    # iris_valid_labels = []
-    # for i, point in enumerate(X_iris_scaled):
-    #     if (point[0] >= 0 and point[1] >= 0 and 
-    #         point[0] <= 1 and point[1] <= 1 and
-    #         point[1] <= 2 * (0.5 - abs(point[0] - 0.5))):
-    #         iris_valid_points.append(point)
-    #         iris_valid_labels.append(y_iris_binary[i])
-    
-    # X_iris_final = np.array(iris_valid_points)
-    # y_iris_final = np.array(iris_valid_labels)
-    
-    # # Test both datasets
-    # datasets = [
-    #     (X_iris_final, y_iris_final, "Iris Dataset")
-    # ]
-    
-    # subdivision_levels = [0, 1, 2, 3]
-    
-    # for X, y, dataset_name in datasets:
-    #     for level in subdivision_levels:
-    #         classifier = SimplexTreeClassifier(
-    #             vertices=None,
-    #             regularization=0.1,
-    #             subdivision_levels=level,
-    #             classifier_type='svc'
-    #         )
-            # classifier.fit(X, y)
-            # title = f"{dataset_name} - Level {level}"
-            # classifier.visualize_tree_and_classification(X, y)
-            
-####################################################################################################
-
-
+            if has_changed:
+                self._build_node_lookup()

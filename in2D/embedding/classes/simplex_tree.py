@@ -2,8 +2,9 @@ import numpy as np
 from typing import List, Optional, Iterator, Tuple
 import sys
 import os
-# from embedding.utilss.visualization import visualize_simplex_tree
+
 from .simplex import Simplex
+from .vertex_registry import VertexRegistry
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -11,14 +12,27 @@ sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
 
 
-
 class SimplexTree(Simplex):
-    def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10):
-        super().__init__(vertices, tolerance)
+    def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10, 
+                 registry: Optional[VertexRegistry] = None, _is_child: bool = False):
+        if registry is None:
+            self._registry = VertexRegistry(tolerance)
+            self._is_root = True
+        else:
+            self._registry = registry
+            self._is_root = not _is_child
+        
+        vertex_indices = self._registry.register_vertices(vertices)
+        super().__init__(vertex_indices, self._registry, tolerance)
+        
         self.children: List[Optional['SimplexTree']] = []
         self.parent: Optional['SimplexTree'] = None
         self.depth: int = 0
         self._node_count = 1
+    
+    @property
+    def vertex_registry(self) -> VertexRegistry:
+        return self._registry
     
     def get_node_count(self) -> int:
         count = 1
@@ -32,7 +46,7 @@ class SimplexTree(Simplex):
         return max(child.get_depth() for child in self.children)
     
     def add_child(self, child_vertices: List[Tuple[float, float]]) -> 'SimplexTree':
-        child = SimplexTree(child_vertices)
+        child = SimplexTree(child_vertices, self.tolerance, self._registry, _is_child=True)
         child.parent = self
         child.depth = self.depth + 1
         self.children.append(child)
@@ -63,9 +77,6 @@ class SimplexTree(Simplex):
                 leaves.append(node)
         return leaves
     
-    def get_vertices_as_tuples(self) -> List[Tuple[float, float]]:
-        return [tuple(float(x) for x in v) for v in self.vertices]
-    
     def find_containing_simplex(self, point: Tuple[float, float]) -> Optional['SimplexTree']:     
         if not self.point_inside_simplex(point):
             return None
@@ -81,7 +92,8 @@ class SimplexTree(Simplex):
         return self
     
     def __repr__(self):
-        vertex_str = str([tuple(v) for v in self.vertices])
+        vertices = self.get_vertices_as_tuples()
+        vertex_str = str(vertices)
         return f"{self.__class__.__name__}(vertices={vertex_str}, children={len(self.children)}, depth={self.depth})"
     
     def add_splitting_point(self, point: Tuple[float, float]) -> List['SimplexTree']:
@@ -97,17 +109,19 @@ class SimplexTree(Simplex):
         if barycentric_coords is None:
             raise ValueError(f"Could not compute barycentric coordinates for splitting point {point}")
 
-        if len(self.vertices) == 3:
+        vertices = self.get_vertices_as_tuples()
+        
+        if len(vertices) == 3:
             children = []
             for i in range(3):
-                v1 = tuple(self.vertices[i])
-                v2 = tuple(self.vertices[(i + 1) % 3])
+                v1 = vertices[i]
+                v2 = vertices[(i + 1) % 3]
                 child_vertices = [v1, v2, tuple(point)]
                 child = self.add_child(child_vertices)
                 children.append(child)
             return children
         else:
-            extended_vertices = list(self.vertices) + [tuple(point)]
+            extended_vertices = list(vertices) + [tuple(point)]
             extended_child = self.add_child(extended_vertices)
             return [extended_child]
 
@@ -128,7 +142,8 @@ class SimplexTree(Simplex):
         return embedding
     
     def compute_barycentric_center(self) -> Tuple[float, float]:
-        center = np.mean(self.vertices, axis=0)
+        vertices = self.vertices
+        center = np.mean(vertices, axis=0)
         return tuple(float(x) for x in center)
     
     def add_barycentric_centers_to_all_leaves(self) -> int:
@@ -156,7 +171,7 @@ class SimplexTree(Simplex):
     def print_tree(self) -> None:
         def _print(node, prefix: str = "", is_last: bool = True):
             connector = "└── " if is_last else "├── "
-            vertices = ", ".join([f"({v[0]:.1f}, {v[1]:.1f})" for v in node.get_vertices_as_tuples()])
+            vertices = ", ".join([f"({v[0]:.2f}, {v[1]:.2f})" for v in node.get_vertices_as_tuples()])
             print(f"{prefix}{connector}{vertices}")
             new_prefix = prefix + ("    " if is_last else "│   ")
             child_count = len(node.children)
@@ -165,11 +180,13 @@ class SimplexTree(Simplex):
 
         _print(self)
 
+
 if __name__ == "__main__":
-    # Local import to avoid circular-import issues at package import time
     from embedding.utilss.visualization import visualize_simplex_tree
     vertices = [(0, 0), (1, 0), (0.5, 1)] 
     tree = SimplexTree(vertices)
+    
+    print(f"Registry has {len(tree.vertex_registry)} vertices")
     
     barycenter = tree.compute_barycentric_center()
     print(f"Barycentric point of the initial triangle is: {barycenter}")
@@ -178,6 +195,7 @@ if __name__ == "__main__":
     tree_barycentric = SimplexTree(vertices)
 
     tree_barycentric.add_barycentric_centers_recursively(1)
+    print(f"After subdivision, registry has {len(tree_barycentric.vertex_registry)} vertices")
     visualize_simplex_tree(tree_barycentric, None, "tree_barycentric") 
     
     print("\nTree structure after barycentric subdivision:")
@@ -205,4 +223,3 @@ if __name__ == "__main__":
     visualize_simplex_tree(tree_mixed, None, "mixed") 
     
     children = tree_mixed.subdivide_with_point(test_point)
-

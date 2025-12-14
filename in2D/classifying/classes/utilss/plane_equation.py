@@ -17,34 +17,13 @@ class PlaneEquation:
         self.normalized_coefficients = None
         
     def compute_plane_from_weights(self, weight_vector: np.ndarray) -> np.ndarray:
-        weight_vector = np.array(weight_vector).flatten()
+                
+        # simplex_weights = weight_vector[self.simplex.vertex_indices] 
+        # plane_eq = simplex.A_inv @ weight 
         
-        if len(weight_vector) != len(self.simplex.vertices):
-            raise ValueError(f"Weight vector size {len(weight_vector)} doesn't match number of vertices {len(self.simplex.vertices)}")
-        
-        vertices = self.simplex.vertices
-        x_coords = np.array([v[0] for v in vertices])
-        y_coords = np.array([v[1] for v in vertices])
-        
-        A_matrix = np.column_stack([
-            x_coords,
-            y_coords,
-            np.ones(len(vertices))
-        ])
-        
-        try:
-            if len(vertices) == 3:
-                plane_coefficients = np.linalg.solve(A_matrix, weight_vector)
-            else:
-                plane_coefficients = np.linalg.lstsq(A_matrix, weight_vector, rcond=None)[0]
-        except np.linalg.LinAlgError:
-            raise ValueError("Cannot compute plane equation - matrix is singular")
-        
-        self.plane_coefficients = plane_coefficients
-        
-        magnitude = np.linalg.norm(self.plane_coefficients)
-        self.normalized_coefficients = self.plane_coefficients / magnitude if magnitude > 0 else self.plane_coefficients
-        
+        simplex_weights = np.asarray(weight_vector)[self.simplex.vertex_indices]
+        plane_eq = self.simplex.A_inv.T @ (simplex_weights[1:] - simplex_weights[0])
+        self.plane_coefficients = np.append(plane_eq, simplex_weights[0] - plane_eq @ self.simplex.vertices[0])
         return self.plane_coefficients
     
     def get_cartesian_form(self) -> str:
@@ -108,8 +87,9 @@ class PlaneEquation:
 
 if __name__ == "__main__":
     vertices_2d = [(0, 0), (1, 0), (0.5, 1)]
-    simplex = Simplex(vertices_2d)
-    plane_eq = PlaneEquation(simplex)
+    
+    tree = SimplexTree(vertices_2d)
+    plane_eq = PlaneEquation(tree)
     test_weights = np.array([0.3, 0.4, 0.3])
     
     plane_vector = plane_eq.compute_plane_from_weights(test_weights)
@@ -118,19 +98,6 @@ if __name__ == "__main__":
     cartesian_form = plane_eq.get_cartesian_form()
     print(f"Cartesian form: {cartesian_form}")
     
-    
-    
-    # print("\nVerification at vertices:")
-    # for i, vertex in enumerate(vertices_2d):
-    #     x_val, y_val = vertex
-    #     w_value = plane_eq.evaluate_at_point(x_val, y_val)
-    #     print(f"At vertex V{i}=({x_val}, {y_val}): w={w_value:.3f}, expected={test_weights[i]}")
-    
-    # normal = plane_eq.get_normal_vector()
-    # print(f"\nNormal vector to plane: {normal}")
-    
-    
-    tree = SimplexTree(vertices_2d)
     tree.add_barycentric_centers_recursively(1)
     
     leaves = tree.get_leaves()
