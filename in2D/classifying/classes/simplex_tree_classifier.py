@@ -12,7 +12,6 @@ sys.path.insert(0, in2d_dir)
 from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
-from in2D.classifying.classes.utilss.convexity_check import check_convexity_between_simplices
 
 
 class SimplexTreeClassifier:
@@ -184,32 +183,32 @@ class SimplexTreeClassifier:
                 boundaries.append(vertices)
         return boundaries
 
-    def _simplex_crosses_boundary(self, simplex_node, weights) -> bool:
-        decision_values = [weights[idx] for idx in simplex_node.vertex_indices]
+    def _simplex_crosses_boundary(self, simplex_node, weights, intercept) -> bool:
+        decision_values = [weights[idx] + intercept for idx in simplex_node.vertex_indices]
         has_positive = any(val > 0 for val in decision_values)
         has_negative = any(val < 0 for val in decision_values)
         return has_positive and has_negative
 
-    def _get_simplex_class(self, simplex_node, weights) -> bool:
-        vals = [weights[i] for i in simplex_node.vertex_indices]
+    def _get_simplex_class(self, simplex_node, weights, intercept) -> bool:
+        vals = [weights[i] + intercept for i in simplex_node.vertex_indices]
         is_positive = any(v > 0 for v in vals) or all(v == 0 for v in vals)
         return is_positive
 
-    def _are_siblings_redundant(self, parent_node, weights) -> bool:
+    def _are_siblings_same_side(self, parent_node, weights, intercept) -> bool:
         if not parent_node.children:
             return False
         
         child0 = parent_node.children[0]
-        if self._simplex_crosses_boundary(child0, weights):
+        if self._simplex_crosses_boundary(child0, weights, intercept):
             return False
         
-        first_child_class = self._get_simplex_class(child0, weights)
+        first_child_class = self._get_simplex_class(child0, weights, intercept)
         
         for child in parent_node.children[1:]:
-            if self._simplex_crosses_boundary(child, weights):
+            if self._simplex_crosses_boundary(child, weights, intercept):
                 return False
             
-            child_class = self._get_simplex_class(child, weights)
+            child_class = self._get_simplex_class(child, weights, intercept)
             if child_class != first_child_class:
                 return False
                 
@@ -220,8 +219,9 @@ class SimplexTreeClassifier:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
         crossing_simplices = []
         weights = self.classifier.coef_[0]
+        intercept = self.classifier.intercept_[0]
         for leaf in self.leaf_simplexes:
-            if self._simplex_crosses_boundary(leaf, weights):
+            if self._simplex_crosses_boundary(leaf, weights, intercept):
                 vertices = leaf.get_vertices_as_tuples()
                 decision_values = self.get_vertex_decision_values(vertices, weights)
                 crossing_simplices.append({
@@ -248,86 +248,21 @@ class SimplexTreeClassifier:
             })
         return plane_equations
 
-    def get_simplex_plane_coefficients(self, simplex_node) -> np.ndarray:
-        weights = self.classifier.coef_[0]
-        plane_eq = PlaneEquation(simplex_node)
-        return plane_eq.compute_plane_from_weights(weights)
-
-    def get_adjacent_crossing_simplices(self, target_simplex_vertices: np.ndarray) -> List[Dict]:
-        adjacent_simplices_indices = self.find_adjacent_simplices(target_simplex_vertices)
-        adjacent_crossing = []
-        weights = self.classifier.coef_[0]
-        
-        for adj_indices in adjacent_simplices_indices:
-            adj_vertices = [self.all_vertices[idx] for idx in adj_indices]
-            adj_simplex_node = self._get_simplex_node(adj_vertices)
-            
-            if adj_simplex_node and self._simplex_crosses_boundary(adj_simplex_node, weights):
-                plane_coeffs = self.get_simplex_plane_coefficients(adj_simplex_node)
-                adjacent_crossing.append({
-                    'simplex': adj_simplex_node,
-                    'vertices': adj_vertices,
-                    'plane_coefficients': plane_coeffs
-                })
-        
-        return adjacent_crossing
-
-    def find_nonconvex_simplices(self, target_simplex_vertices: np.ndarray) -> List[Dict]:
-        target_simplex = self._get_simplex_node(target_simplex_vertices)
-        weights = self.classifier.coef_[0]
-        adjacent_simplices = self.get_adjacent_crossing_simplices(target_simplex_vertices)
-        
-        nonconvex_pairs = []
-        for adjacent in adjacent_simplices:
-            adjacent_simplex = adjacent['simplex']
-            result = check_convexity_between_simplices(target_simplex, adjacent_simplex, weights, global_tree=self.tree)
-            
-            if not result['is_convex']:
-                nonconvex_pairs.append({
-                    'target_simplex': target_simplex,
-                    'adjacent_simplex': adjacent_simplex,
-                    'test_point': result['test_point'],
-                    'type': 'non-convex',
-                })
-        
-        return nonconvex_pairs
-
-    def find_redundant_simplices(self) -> set:
+    def find_same_side_simplices(self) -> set:
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet.")
         weights = self.classifier.coef_[0]
+        intercept = self.classifier.intercept_[0]
         
-        redundant_keys = set()
+        same_side_keys = set()
         leaf_parents = set()
         for leaf in self.leaf_simplexes:
             if leaf.parent:
                 leaf_parents.add(leaf.parent)
         
         for parent in leaf_parents:
-            if self._are_siblings_redundant(parent, weights):
+            if self._are_siblings_same_side(parent, weights, intercept):
                 for child in parent.children:
-                    redundant_keys.add(frozenset(child.vertex_indices))
+                    same_side_keys.add(frozenset(child.vertex_indices))
         
-        return redundant_keys
-
-    def prune_redundant_leaves(self):
-        if self.classifier is None:
-            raise ValueError("Classifier not fitted yet.")
-        
-        weights = self.classifier.coef_[0]
-        has_changed = True
-        
-        while has_changed:
-            has_changed = False
-            leaf_parents = set()
-            for leaf in self.leaf_simplexes:
-                if leaf.parent:
-                    leaf_parents.add(leaf.parent)
-            
-            for parent in leaf_parents:
-                if self._are_siblings_redundant(parent, weights):
-                    parent.children = []
-                    has_changed = True
-            
-            if has_changed:
-                self._build_node_lookup()
+        return same_side_keys

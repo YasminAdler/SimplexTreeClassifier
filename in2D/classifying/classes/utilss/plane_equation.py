@@ -16,14 +16,11 @@ class PlaneEquation:
         self.plane_coefficients = None
         self.normalized_coefficients = None
         
-    def compute_plane_from_weights(self, weight_vector: np.ndarray) -> np.ndarray:
-                
-        # simplex_weights = weight_vector[self.simplex.vertex_indices] 
-        # plane_eq = simplex.A_inv @ weight 
-        
+    def compute_plane_from_weights(self, weight_vector: np.ndarray, intercept: float = 0.0) -> np.ndarray:
         simplex_weights = np.asarray(weight_vector)[self.simplex.vertex_indices]
         plane_eq = self.simplex.A_inv.T @ (simplex_weights[1:] - simplex_weights[0])
-        self.plane_coefficients = np.append(plane_eq, simplex_weights[0] - plane_eq @ self.simplex.vertices[0])
+        constant = (simplex_weights[0] + intercept) - plane_eq @ self.simplex.vertices[0]
+        self.plane_coefficients = np.append(plane_eq, constant)
         return self.plane_coefficients
     
     def get_cartesian_form(self) -> str:

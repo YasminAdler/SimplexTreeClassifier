@@ -61,6 +61,21 @@ class SimplexTree(Simplex):
     def get_child_count(self) -> int:
         return len(self.children)
     
+    def remove_child(self, child: 'SimplexTree') -> bool:
+        if child in self.children:
+            self.children.remove(child)
+            child.parent = None
+            return True
+        return False
+    
+    def remove_simplex_by_key(self, vertex_key: frozenset) -> bool:
+        for node in self.traverse_breadth_first():
+            if frozenset(node.vertex_indices) == vertex_key:
+                if node.parent is not None:
+                    return node.parent.remove_child(node)
+                return False
+        return False
+    
     def traverse_breadth_first(self) -> Iterator['SimplexTree']:
         from collections import deque
         queue = deque([self])

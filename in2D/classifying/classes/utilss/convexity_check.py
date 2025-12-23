@@ -16,8 +16,7 @@ def get_shared_vertices(simplex1_node, simplex2_node):
     return [np.array(v) for v in shared_tuples]
 
 
-def find_intersection_on_edge(line_coeffs, point_a, point_b):
-    # line_coeffs is [w_0, ..., w_n, b]
+def find_crossing_on_edge(line_coeffs, point_a, point_b):
     w = line_coeffs[:-1]
     b = line_coeffs[-1]
     
@@ -34,7 +33,32 @@ def find_intersection_on_edge(line_coeffs, point_a, point_b):
     return point_a + t * (point_b - point_a)
 
 
-def find_point_on_svm_line(simplex_node, line_coeffs, shared_vertices):
+def find_crossing_on_shared_face(shared_vertices, line_coeffs):
+    for i in range(len(shared_vertices)):
+        for j in range(i + 1, len(shared_vertices)):
+            point_a = np.array(shared_vertices[i])
+            point_b = np.array(shared_vertices[j])
+            crossing = find_crossing_on_edge(line_coeffs, point_a, point_b)
+            if crossing is not None:
+                return crossing
+    return None
+
+
+def find_svm_meeting_point(simplex1_node, simplex2_node, weights, intercept):
+    shared_vertices = get_shared_vertices(simplex1_node, simplex2_node)
+    
+    if len(shared_vertices) < 2:
+        return None
+    
+    svm_plane1 = PlaneEquation(simplex1_node)
+    line_coeffs1 = svm_plane1.compute_plane_from_weights(weights, intercept)
+    
+    meeting_point = find_crossing_on_shared_face(shared_vertices, line_coeffs1)
+    
+    return meeting_point
+
+
+def find_external_crossing(simplex_node, line_coeffs, shared_vertices):
     vertices = [np.array(v) for v in simplex_node.vertices]
     shared_set = set(tuple(v) for v in shared_vertices)
     
@@ -43,71 +67,103 @@ def find_point_on_svm_line(simplex_node, line_coeffs, shared_vertices):
             vi_shared = tuple(vertices[i]) in shared_set
             vj_shared = tuple(vertices[j]) in shared_set
             
-            # Skip shared edge
             if vi_shared and vj_shared:
                 continue
             
-            point = find_intersection_on_edge(line_coeffs, vertices[i], vertices[j])
-            if point is not None:
-                return point
+            crossing = find_crossing_on_edge(line_coeffs, vertices[i], vertices[j])
+            if crossing is not None:
+                return crossing
     
     return None
 
 
-def find_point_on_shared_boundary(shared_vertices, line_coeffs):
-    vertices = [np.array(v) for v in shared_vertices]
-    for i in range(len(vertices)):
-        for j in range(i + 1, len(vertices)):
-            point = find_intersection_on_edge(line_coeffs, vertices[i], vertices[j])
-            if point is not None:
-                return point
-    return None
-
-
-def check_convexity_between_simplices(simplex1_node, simplex2_node, weights, global_tree=None) -> dict:
+def find_epsilon_points(simplex1_node, simplex2_node, weights, intercept, epsilon):
     shared_vertices = get_shared_vertices(simplex1_node, simplex2_node)
+    
     if len(shared_vertices) < 2:
-        return {'is_convex': True, 'test_point': None}
+        return None, None, None
     
     svm_plane1 = PlaneEquation(simplex1_node)
     svm_plane2 = PlaneEquation(simplex2_node)
     
-    line_coeffs1 = svm_plane1.compute_plane_from_weights(weights)
-    line_coeffs2 = svm_plane2.compute_plane_from_weights(weights)
+    line_coeffs1 = svm_plane1.compute_plane_from_weights(weights, intercept)
+    line_coeffs2 = svm_plane2.compute_plane_from_weights(weights, intercept)
     
-    meeting_point = find_point_on_shared_boundary(shared_vertices, line_coeffs1)
+    meeting_point = find_crossing_on_shared_face(shared_vertices, line_coeffs1)
     
     if meeting_point is None:
-        return {'is_convex': True, 'test_point': None}
-        
-    point_on_line1 = find_point_on_svm_line(simplex1_node, line_coeffs1, shared_vertices)
-    point_on_line2 = find_point_on_svm_line(simplex2_node, line_coeffs2, shared_vertices)
+        return None, None, None
     
-    if point_on_line1 is None or point_on_line2 is None:
-        return {'is_convex': True, 'test_point': None}
+    external1 = find_external_crossing(simplex1_node, line_coeffs1, shared_vertices)
+    external2 = find_external_crossing(simplex2_node, line_coeffs2, shared_vertices)
     
-    average_point = (meeting_point + point_on_line1 + point_on_line2) / 3
+    if external1 is None or external2 is None:
+        return meeting_point, None, None
+    
+    dir1 = external1 - meeting_point
+    dir2 = external2 - meeting_point
+    
+    norm1 = np.linalg.norm(dir1)
+    norm2 = np.linalg.norm(dir2)
+    
+    if norm1 < 1e-10 or norm2 < 1e-10:
+        return meeting_point, None, None
+    
+    # Move epsilon distance along the SVM boundary
+    point1 = meeting_point + epsilon * (dir1 / norm1)
+    point2 = meeting_point + epsilon * (dir2 / norm2)
+    
+    return meeting_point, point1, point2
+
+
+def find_average_point(simplex1_node, simplex2_node, weights, intercept, epsilon):
+    meeting_point, point1, point2 = find_epsilon_points(
+        simplex1_node, simplex2_node, weights, intercept, epsilon
+    )
+    
+    if meeting_point is None or point1 is None or point2 is None:
+        return None, meeting_point, point1, point2
+    
+    average_point = (meeting_point + point1 + point2) / 3
+    
+    return average_point, meeting_point, point1, point2
+
+
+def is_point_in_red_area(point, containing_simplex, weights, intercept):
+    barycentric = containing_simplex.embed_point(tuple(point))
+    if barycentric is None:
+        return None
+    
+    vertex_decisions = [weights[idx] + intercept for idx in containing_simplex.vertex_indices]
+    
+    decision_value = np.dot(vertex_decisions, barycentric)
+    
+    return decision_value >= 0
+
+
+def check_convexity(simplex1_node, simplex2_node, weights, intercept, global_tree=None, epsilon=0.02):
+    average_point, meeting, pt1, pt2 = find_average_point(
+        simplex1_node, simplex2_node, weights, intercept, epsilon
+    )
+    
+    if average_point is None:
+        return True, None, meeting, pt1, pt2
     
     containing_simplex = None
+    
     if simplex1_node.point_inside_simplex(tuple(average_point)):
         containing_simplex = simplex1_node
     elif simplex2_node.point_inside_simplex(tuple(average_point)):
         containing_simplex = simplex2_node
-    
-    if containing_simplex is None and global_tree is not None:
+    elif global_tree is not None:
         containing_simplex = global_tree.find_containing_simplex(tuple(average_point))
     
     if containing_simplex is None:
-        return {'is_convex': True, 'test_point': average_point}
-        
-    barycentric_coords = containing_simplex.embed_point(tuple(average_point))
-    if barycentric_coords is None:
-        return {'is_convex': True, 'test_point': average_point}
-        
-    vertex_decision_values = weights[containing_simplex.vertex_indices]
+        return True, average_point, meeting, pt1, pt2
     
-    value_at_average_point = np.dot(vertex_decision_values, barycentric_coords)
+    in_red = is_point_in_red_area(average_point, containing_simplex, weights, intercept)
     
-    is_inside_red_area = value_at_average_point >= 0
+    if in_red is None:
+        return True, average_point, meeting, pt1, pt2
     
-    return {'is_convex': is_inside_red_area, 'test_point': average_point}
+    return in_red, average_point, meeting, pt1, pt2
