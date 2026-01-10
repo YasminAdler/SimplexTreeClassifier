@@ -16,23 +16,39 @@ class SimplexTree(Simplex):
     def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10, 
                  registry: Optional[VertexRegistry] = None, _is_child: bool = False):
         if registry is None:
-            self._registry = VertexRegistry(tolerance)
+            reg = VertexRegistry(tolerance)
             self._is_root = True
+            self._split_counter = [0]
         else:
-            self._registry = registry
+            reg = registry
             self._is_root = not _is_child
+            self._split_counter = None
         
-        vertex_indices = self._registry.register_vertices(vertices)
-        super().__init__(vertex_indices, self._registry, tolerance)
+        vertex_indices = reg.register_vertices(vertices)
+        super().__init__(vertex_indices, reg, tolerance)
         
         self.children: List[Optional['SimplexTree']] = []
         self.parent: Optional['SimplexTree'] = None
         self.depth: int = 0
         self._node_count = 1
+        self.splitting_point_index: Optional[int] = None
+        self.splitting_point_vertex_index: Optional[int] = None
+    
+    def _get_root(self) -> 'SimplexTree':
+        node = self
+        while node.parent is not None:
+            node = node.parent
+        return node
+    
+    def _get_next_split_index(self) -> int:
+        root = self._get_root()
+        idx = root._split_counter[0]
+        root._split_counter[0] += 1
+        return idx
     
     @property
     def vertex_registry(self) -> VertexRegistry:
-        return self._registry
+        return self.registry
     
     def get_node_count(self) -> int:
         count = 1
@@ -46,7 +62,7 @@ class SimplexTree(Simplex):
         return max(child.get_depth() for child in self.children)
     
     def add_child(self, child_vertices: List[Tuple[float, float]]) -> 'SimplexTree':
-        child = SimplexTree(child_vertices, self.tolerance, self._registry, _is_child=True)
+        child = SimplexTree(child_vertices, self.tolerance, self.registry, _is_child=True)
         child.parent = self
         child.depth = self.depth + 1
         self.children.append(child)
@@ -67,12 +83,25 @@ class SimplexTree(Simplex):
             child.parent = None
             return True
         return False
+
+    def remove_splitting_point(self, splitting_point_index: int) -> bool:
+        for node in self.traverse_breadth_first():
+            if node.splitting_point_index == splitting_point_index:
+                for child in node.children:
+                    if len(child.children) > 0:
+                        return False
+                node.children.clear()
+                node.splitting_point_index = None
+                node.splitting_point_vertex_index = None
+                return True
+        return False
     
-    def remove_simplex_by_key(self, vertex_key: frozenset) -> bool:
+    def remove_by_leaf_key(self, vertex_key: frozenset) -> bool:
         for node in self.traverse_breadth_first():
             if frozenset(node.vertex_indices) == vertex_key:
-                if node.parent is not None:
-                    return node.parent.remove_child(node)
+                parent = node.parent
+                if parent is not None and parent.splitting_point_index is not None:
+                    return self.remove_splitting_point(parent.splitting_point_index)
                 return False
         return False
     
@@ -120,9 +149,9 @@ class SimplexTree(Simplex):
         if not self.point_inside_simplex(point):
             raise ValueError(f"Splitting point {point} is not inside this simplex")
 
-        barycentric_coords = self.embed_point(point)
-        if barycentric_coords is None:
-            raise ValueError(f"Could not compute barycentric coordinates for splitting point {point}")
+        self.splitting_point_index = self._get_next_split_index()
+        vertex_indices = self.registry.register_vertices([tuple(point)])
+        self.splitting_point_vertex_index = vertex_indices[0]
 
         vertices = self.get_vertices_as_tuples()
         
@@ -146,15 +175,6 @@ class SimplexTree(Simplex):
         if containing_simplex is None:
             raise ValueError(f"Splitting point {point} is not inside any simplex in this tree")
         return containing_simplex.add_splitting_point(point)
-    
-    def embed_data_point(self, point: Tuple[float, float]) -> Optional[Tuple[float, ...]]:
-        containing_simplex = self.find_containing_simplex(point)
-        if containing_simplex is None:
-            print(f"DATA POINT: {point} is outside all simplexes")
-            return None
-        
-        embedding = containing_simplex.embed_point(point)
-        return embedding
     
     def compute_barycentric_center(self) -> Tuple[float, float]:
         vertices = self.vertices
@@ -183,58 +203,33 @@ class SimplexTree(Simplex):
         for child in self.children:
             child.add_barycentric_centers_recursively(levels - 1)
 
-    def print_tree(self) -> None:
+    def print_tree(self, show_splitting_points: bool = False) -> None:
         def _print(node, prefix: str = "", is_last: bool = True):
             connector = "└── " if is_last else "├── "
-            vertices = ", ".join([f"({v[0]:.2f}, {v[1]:.2f})" for v in node.get_vertices_as_tuples()])
-            print(f"{prefix}{connector}{vertices}")
-            new_prefix = prefix + ("    " if is_last else "│   ")
-            child_count = len(node.children)
-            for idx, child in enumerate(node.children):
-                _print(child, new_prefix, idx == child_count - 1)
+            if show_splitting_points:
+                if node.splitting_point_index is not None:
+                    print(f"{prefix}{connector}[{node.splitting_point_index}] (vertex {node.splitting_point_vertex_index})")
+                    new_prefix = prefix + ("    " if is_last else "│   ")
+                    child_count = len(node.children)
+                    for idx, child in enumerate(node.children):
+                        _print(child, new_prefix, idx == child_count - 1)
+            else:
+                if node.splitting_point_index is not None:
+                    label = f"[{node.splitting_point_index}] vertices: {node.vertex_indices}"
+                else:
+                    label = f"vertices: {node.vertex_indices}"
+                print(f"{prefix}{connector}{label}")
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                child_count = len(node.children)
+                for idx, child in enumerate(node.children):
+                    _print(child, new_prefix, idx == child_count - 1)
 
         _print(self)
-
-
-if __name__ == "__main__":
-    from embedding.utilss.visualization import visualize_simplex_tree
-    vertices = [(0, 0), (1, 0), (0.5, 1)] 
-    tree = SimplexTree(vertices)
     
-    print(f"Registry has {len(tree.vertex_registry)} vertices")
-    
-    barycenter = tree.compute_barycentric_center()
-    print(f"Barycentric point of the initial triangle is: {barycenter}")
-    visualize_simplex_tree(tree, None, "2D Triangle") 
-
-    tree_barycentric = SimplexTree(vertices)
-
-    tree_barycentric.add_barycentric_centers_recursively(1)
-    print(f"After subdivision, registry has {len(tree_barycentric.vertex_registry)} vertices")
-    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric") 
-    
-    print("\nTree structure after barycentric subdivision:")
-    print(f"Total nodes: {tree_barycentric.get_node_count()}")
-    print(f"Tree depth: {tree_barycentric.get_depth()}")
-    print(f"Leaf nodes: {len(tree_barycentric.get_leaves())}")
-    
-    visualize_simplex_tree(tree_barycentric, None, "tree_barycentric_after_subdivision") 
-
-    tree_mixed = SimplexTree(vertices)
-    test_point = (0.343, 0.2)
-    
-    print(f"Adding custom point: {test_point}")
-    children = tree_mixed.subdivide_with_point(test_point)
-    
-    visualize_simplex_tree(tree_mixed, test_point, "tree with manually added point") 
-
-    print("\nNow adding barycentric centers to all leaves...")
-    count = tree_mixed.add_barycentric_centers_to_all_leaves()
-    print(f"Subdivided {count} leaf simplexes")
-    
-    
-    tree_mixed.add_barycentric_centers_recursively(2)
-
-    visualize_simplex_tree(tree_mixed, None, "mixed") 
-    
-    children = tree_mixed.subdivide_with_point(test_point)
+    def get_splitting_points(self) -> List[Tuple[int, Tuple[float, float]]]:
+        splitting_points = []
+        for node in self.traverse_breadth_first():
+            if node.splitting_point_index is not None:
+                coords = tuple(self.registry.get_vertex(node.splitting_point_vertex_index))
+                splitting_points.append((node.splitting_point_index, coords))
+        return splitting_points

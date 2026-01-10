@@ -17,17 +17,15 @@ from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 class SimplexTreeClassifier:
     def __init__(self, vertices: List[Tuple[float, float]] = None, 
                  regularization=0.01, 
-                 subdivision_levels=1, 
+                 subdivision_levels=1,
                  classifier_type='linear_svc'):
         if vertices is None:
             vertices = [(0, 0), (1, 0), (0.5, 1)]
         self.tree = SimplexTree(vertices)
         self.regularization = regularization
         self.subdivision_levels = subdivision_levels
-        self.classifier_type = classifier_type
         self.classifier = None
         self.leaf_simplexes = []
-        self._processed_pairs_cache = set()
         self.all_nodes_lookup = {}
         self._containing_simplex_cache = {}
         
@@ -38,10 +36,6 @@ class SimplexTreeClassifier:
     @property
     def vertex_registry(self):
         return self.tree.vertex_registry
-    
-    @property
-    def all_vertices(self) -> List[Tuple[float, float]]:
-        return [self.vertex_registry.get_vertex_as_tuple(i) for i in range(len(self.vertex_registry))]
     
     @property
     def vertex_to_index(self) -> Dict[Tuple, int]:
@@ -60,14 +54,6 @@ class SimplexTreeClassifier:
 
 
     
-    def get_vertex_decision_values(self, vertices_list, weights):
-        decision_values = []
-        for vertex in vertices_list:
-            vertex_tuple = tuple(vertex) if not isinstance(vertex, tuple) else vertex
-            idx = self.vertex_to_index[vertex_tuple]
-            decision_values.append(weights[idx])
-        return np.array(decision_values)
-
     def _get_simplex_node(self, simplex_vertices):
         indices = self._vertices_to_indices(simplex_vertices)
         vertex_key = frozenset(indices)
@@ -79,42 +65,6 @@ class SimplexTreeClassifier:
             vertex_tuple = tuple(vertex) if not isinstance(vertex, tuple) else vertex
             indices.append(self.vertex_to_index[vertex_tuple])
         return indices
-
-    def find_adjacent_simplices(self, simplex_points): ## TODO: Check if the sibling of the parent is not found is the reason for the not finding the nonconvex
-        simplex_node = self._get_simplex_node(simplex_points)
-        if simplex_node is None:
-            return []
-        adjacent_simplex_indices = []
-        dimension = len(simplex_points) - 1
-        max_adjacent = dimension + 1
-        simplex_indices_set = set(self._vertices_to_indices(simplex_points))
-        visited_nodes = set()
-
-        if simplex_node.parent is not None:
-            for sibling in simplex_node.parent.children:
-                if sibling != simplex_node and sibling.is_leaf():
-                    sibling_indices = list(sibling.vertex_indices)
-                    adjacent_simplex_indices.append(sibling_indices)
-                    visited_nodes.add(id(sibling))
-                    if len(adjacent_simplex_indices) >= max_adjacent:
-                        return adjacent_simplex_indices[:max_adjacent]
-
-        current_ancestor = simplex_node.parent
-        while current_ancestor is not None and len(adjacent_simplex_indices) < max_adjacent:
-            for descendant in current_ancestor.traverse_breadth_first():
-                if (descendant.is_leaf() and
-                    descendant != simplex_node and
-                    id(descendant) not in visited_nodes):
-                    descendant_indices_set = set(descendant.vertex_indices)
-                    shared_indices = len(simplex_indices_set.intersection(descendant_indices_set))
-                    if shared_indices == dimension:
-                        descendant_indices = list(descendant.vertex_indices)
-                        adjacent_simplex_indices.append(descendant_indices)
-                        visited_nodes.add(id(descendant))
-                        if len(adjacent_simplex_indices) >= max_adjacent:
-                            break
-            current_ancestor = current_ancestor.parent
-        return adjacent_simplex_indices[:max_adjacent]
 
     def transform(self, data_points) -> lil_matrix:
         max_vertices = len(self.vertex_registry)
@@ -133,16 +83,6 @@ class SimplexTreeClassifier:
                     barycentric_matrix[point_index, global_idx] = coordinate
         return barycentric_matrix
 
-    def _compute_decision_values(self, feature_matrix) -> np.ndarray:
-        if issparse(feature_matrix):
-            feature_matrix = feature_matrix.toarray()
-        coef = getattr(self.classifier, "coef_", None)
-        if coef is None:
-            raise AttributeError("Classifier does not expose coef_ .")
-        coef_vector = np.asarray(coef).reshape(-1)
-        decision_values = feature_matrix @ coef_vector
-        return np.asarray(decision_values).reshape(-1)
-
     def normalize_data(self, data: np.ndarray) -> np.ndarray:
         if len(data.shape) == 1:
             data = data.reshape(1, -1)
@@ -153,13 +93,9 @@ class SimplexTreeClassifier:
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         X_normalized = self.normalize_data(X)
-        self._processed_pairs_cache.clear()
         X_transformed = self.transform(X_normalized)
         print(X_transformed.shape)
-        if self.classifier_type == 'linear_svc':
-            self.classifier = LinearSVC(C=self.regularization)
-        else:
-            raise ValueError(f"Unknown classifier type: {self.classifier_type}")
+        self.classifier = LinearSVC(C=self.regularization)
         self.classifier.fit(X_transformed, y)
         return self
 
@@ -171,17 +107,8 @@ class SimplexTreeClassifier:
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
-    def visualize_with_data_points(self, data_points: np.ndarray, title: str = "Simplex Tree with Data Points", figsize: Tuple[int, int] = (8, 5)):
-        data_points_list = [tuple(point) for point in data_points]
-        visualize_simplex_tree(self.tree, data_points=data_points_list, title=title, figsize=figsize)
-
     def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
-        boundaries = []
-        for leaf in self.leaf_simplexes:
-            vertices = leaf.get_vertices_as_tuples()
-            if len(vertices) >= 3:
-                boundaries.append(vertices)
-        return boundaries
+        return [leaf.get_vertices_as_tuples() for leaf in self.leaf_simplexes]
 
     def _simplex_crosses_boundary(self, simplex_node, weights, intercept) -> bool:
         decision_values = [weights[idx] + intercept for idx in simplex_node.vertex_indices]
@@ -195,9 +122,6 @@ class SimplexTreeClassifier:
         return is_positive
 
     def _are_siblings_same_side(self, parent_node, weights, intercept) -> bool:
-        if not parent_node.children:
-            return False
-        
         child0 = parent_node.children[0]
         if self._simplex_crosses_boundary(child0, weights, intercept):
             return False
@@ -223,7 +147,7 @@ class SimplexTreeClassifier:
         for leaf in self.leaf_simplexes:
             if self._simplex_crosses_boundary(leaf, weights, intercept):
                 vertices = leaf.get_vertices_as_tuples()
-                decision_values = self.get_vertex_decision_values(vertices, weights)
+                decision_values = np.array([weights[idx] for idx in leaf.vertex_indices])
                 crossing_simplices.append({
                     'simplex': leaf,
                     'vertices': vertices,
