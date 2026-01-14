@@ -21,8 +21,8 @@
 │ • is_linearly_independent() → bool                                          │
 │ • get_determinant() → float                                                 │
 │ • can_perform_test() → bool                                                 │
-│ • embed_point(point) → Optional[Tuple[float, ...]]                         │
-│ • point_inside_simplex(point) → bool                                        │
+│ • _embed_point(point) → Optional[Tuple[float, ...]]                         │
+│ • _point_inside_simplex(point) → bool                                        │
 │ • convert_2d_to_homogeneous(point_2d) → Tuple[float, float, float]         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                         │
@@ -42,15 +42,15 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ Tree Methods:                                                               │
 │ • add_child(child_vertices) → SimplexTree                                   │
-│ • get_children() → List[SimplexTree]                                        │
-│ • is_leaf() → bool                                                          │
+│ • _get_children() → List[SimplexTree]                                        │
+│ • _is_leaf() → bool                                                          │
 │ • get_child_count() → int                                                   │
-│ • traverse_breadth_first() → Iterator[SimplexTree]                         │
+│ • _traverse_breadth_first() → Iterator[SimplexTree]                         │
 │ • traverse_depth_first() → Iterator[SimplexTree]                           │
 │ • get_leaves() → List[SimplexTree]                                          │
 │ • get_nodes_at_depth(target_depth) → List[SimplexTree]                     │
 │ • find_containing_simplex(point) → Optional[SimplexTree]                   │
-│ • add_splitting_point(point) → List[SimplexTree]                           │
+│ • _add_splitting_point(point) → List[SimplexTree]                           │
 │ • add_point_to_the_most_specific_simplex(point) → List[SimplexTree]        │
 │ • get_vertices_as_tuples() → List[Tuple[float, ...]]                       │
 │ • print_tree() → None                                                       │
@@ -73,9 +73,9 @@
 │ ├─────────────────────────────────────────────────────────────────────────┤ │
 │ │ Methods:                                                                │ │
 │ │ • add_child(child_node)                                                 │ │
-│ │ • get_children() → List[ParentChildSimplexTreeNode]                    │ │
+│ │ • _get_children() → List[ParentChildSimplexTreeNode]                    │ │
 │ │ • remove_child(child_node) → bool                                       │ │
-│ │ • is_leaf() → bool                                                      │ │
+│ │ • _is_leaf() → bool                                                      │ │
 │ │ • get_child_count() → int                                               │ │
 │ │ • is_simplex_tree() → bool                                              │ │
 │ │ • is_simplex() → bool                                                   │ │
@@ -95,9 +95,9 @@
 │ ├─────────────────────────────────────────────────────────────────────────┤ │
 │ │ Methods:                                                                │ │
 │ │ • add_child(child_node)                                                 │ │
-│ │ • get_children() → List[LeftChildRightSiblingSimplexTreeNode]          │ │
+│ │ • _get_children() → List[LeftChildRightSiblingSimplexTreeNode]          │ │
 │ │ • remove_child(child_node) → bool                                       │ │
-│ │ • is_leaf() → bool                                                      │ │
+│ │ • _is_leaf() → bool                                                      │ │
 │ │ • get_child_count() → int                                               │ │
 │ │ • is_simplex_tree() → bool                                              │ │
 │ │ • is_simplex() → bool                                                   │ │
@@ -124,8 +124,8 @@
 ### 1. **Simplex (Base Class)**
 - **Purpose**: Mathematical representation of a simplex (triangle, tetrahedron, etc.)
 - **Holds**: Vertices, transformation matrices, geometric calculations
-- **Provides**: Point-in-simplex testing, barycentric coordinates via `embed_point()`
-- **Key Method**: `point_inside_simplex(point)` - Tests if point is inside simplex
+- **Provides**: Point-in-simplex testing, barycentric coordinates via `_embed_point()`
+- **Key Method**: `_point_inside_simplex(point)` - Tests if point is inside simplex
 
 ### 2. **SimplexTree (Main Class)**
 - **Purpose**: A Simplex that can have children (other SimplexTrees)
@@ -133,7 +133,7 @@
 - **Adds**: Tree functionality (children, traversal, hierarchical subdivision)
 - **Key Concept**: Every SimplexTree IS a Simplex + tree capabilities
 - **Key Methods**: 
-  - `add_splitting_point(point)` - Creates children by replacing vertices with point
+  - `_add_splitting_point(point)` - Creates children by replacing vertices with point
   - `add_point_to_the_most_specific_simplex(point)` - Finds deepest containing simplex and splits it
 
 ### 3. **Tree Node Wrappers (Two Methodologies)**
@@ -150,7 +150,7 @@
 - **Holds**: One SimplexTree + left_child + right_sibling pointers
 - **Structure**: Each node has one left child and one right sibling
 - **Use Case**: More memory efficient, good for binary-like operations
-- **Key Method**: `get_children()` - Traverses sibling chain to collect all children
+- **Key Method**: `_get_children()` - Traverses sibling chain to collect all children
 
 ### 4. **Visualization (Utilities)**
 - **Purpose**: Interactive 3D visualization of simplex trees
@@ -162,7 +162,7 @@
 ```
 1. Create root SimplexTree with vertices [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
    ↓
-2. SimplexTree inherits all Simplex functionality (point_inside_simplex, embed_point)
+2. SimplexTree inherits all Simplex functionality (_point_inside_simplex, _embed_point)
    ↓
 3. Add splitting point (0.3, 0.4, 0.3) using add_point_to_the_most_specific_simplex()
    ↓
@@ -172,7 +172,7 @@
    ↓
 6. Each node can:
    - Check if it's a SimplexTree (has children) or Simplex (no children)
-   - Test if a point is inside using point_inside_simplex()
+   - Test if a point is inside using _point_inside_simplex()
    - Traverse recursively to find containing simplex
    ↓
 7. Visualize the entire tree structure with 3D interactive plot
@@ -198,10 +198,10 @@ containing_simplex = node.find_containing_simplex(point)
 ### **Tree Traversal**
 ```python
 # Get all children
-children = node.get_children()
+children = node._get_children()
 
 # Check if leaf
-is_leaf = node.is_leaf()
+_is_leaf = node._is_leaf()
 
 # Get child count
 count = node.get_child_count()
@@ -210,7 +210,7 @@ count = node.get_child_count()
 ### **Hierarchical Subdivision**
 ```python
 # Add splitting point to create children
-children = simplex_tree.add_splitting_point(point)
+children = simplex_tree._add_splitting_point(point)
 
 # Add point to most specific (deepest) containing simplex
 children = simplex_tree.add_point_to_the_most_specific_simplex(point)
@@ -231,21 +231,21 @@ Tree Node Wrapper (contains SimplexTree + tree structure)
 ## Implementation Details
 
 ### **Barycentric Coordinate Calculation**
-The `embed_point()` method in Simplex class:
+The `_embed_point()` method in Simplex class:
 1. Sets first vertex as origin
 2. Builds transformation matrix A from remaining vertices
 3. Solves A⁻¹(P - V₀) for barycentric coordinates
 4. Returns (α₀, α₁, α₂, ...) where α₀ = 1 - Σαᵢ
 
 ### **Point-in-Simplex Testing**
-The `point_inside_simplex()` method:
-1. Computes barycentric coordinates via `embed_point()`
+The `_point_inside_simplex()` method:
+1. Computes barycentric coordinates via `_embed_point()`
 2. Checks all coordinates are in [0,1]
 3. Verifies sum equals 1 (within tolerance)
 4. Returns True if all conditions met
 
 ### **Tree Subdivision**
-The `add_splitting_point()` method:
+The `_add_splitting_point()` method:
 1. Verifies point is inside simplex
 2. Creates n+1 children by replacing each vertex with the point
 3. Each child simplex shares the splitting point as one vertex

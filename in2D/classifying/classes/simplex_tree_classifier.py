@@ -13,14 +13,16 @@ from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 
+## TODO LIST: change where everever it should not be Tuple[float, float] but an array of D variables 
 
-class SimplexTreeClassifier:
-    def __init__(self, vertices: List[Tuple[float, float]] = None, 
+
+class SimplexTreeClassifier: 
+    def __init__(self, vertices: List[Tuple[float, float]] = None,
                  regularization=0.01, 
                  subdivision_levels=1,
                  classifier_type='linear_svc'):
         if vertices is None:
-            vertices = [(0, 0), (1, 0), (0.5, 1)]
+            vertices = [(0, 0), (2, 0), (0, 2)]
         self.tree = SimplexTree(vertices)
         self.regularization = regularization
         self.subdivision_levels = subdivision_levels
@@ -30,28 +32,19 @@ class SimplexTreeClassifier:
         self._containing_simplex_cache = {}
         
         if self.subdivision_levels > 0:
-            self.tree.add_barycentric_centers_recursively(self.subdivision_levels)
+            self.tree._add_barycentric_centers_recursively(self.subdivision_levels)
         self._build_node_lookup()
     
-    @property
-    def vertex_registry(self):
-        return self.tree.vertex_registry
-    
-    @property
-    def vertex_to_index(self) -> Dict[Tuple, int]:
-        return self.vertex_registry.vertex_to_index
-
     def _build_node_lookup(self):
         self.all_nodes_lookup.clear()
         self.leaf_simplexes.clear()
         self._containing_simplex_cache.clear()
         
-        for node in self.tree.traverse_breadth_first():
+        for node in self.tree._traverse_breadth_first():
             vertex_key = frozenset(node.vertex_indices)
             self.all_nodes_lookup[vertex_key] = node
-            if node.is_leaf():
+            if node._is_leaf():
                 self.leaf_simplexes.append(node)
-
 
     
     def _get_simplex_node(self, simplex_vertices):
@@ -63,11 +56,24 @@ class SimplexTreeClassifier:
         indices = []
         for vertex in vertices:
             vertex_tuple = tuple(vertex) if not isinstance(vertex, tuple) else vertex
-            indices.append(self.vertex_to_index[vertex_tuple])
+            indices.append(self.tree.registry.vertex_to_index[vertex_tuple])
         return indices
 
     def transform(self, data_points) -> lil_matrix:
-        max_vertices = len(self.vertex_registry)
+        """
+        Converts data points to barycentric coordinate embeddings.
+        
+        For each point, finds its containing simplex and computes barycentric
+        coordinates, placing them in a sparse matrix at the simplex's vertex indices.
+        
+        Args:
+            data_points: Array of shape (n_samples, 2) with x,y coordinates
+            
+        Returns:
+            Sparse matrix (n_samples x n_vertices) with barycentric embeddings.
+            Each row has 3 non-zero values summing to 1.
+        """
+        max_vertices = len(self.tree.registry)
         barycentric_matrix = lil_matrix((len(data_points), max_vertices))
         for point_index in range(len(data_points)):
             point = tuple(data_points[point_index])
@@ -77,13 +83,13 @@ class SimplexTreeClassifier:
                 containing_simplex = self.tree.find_containing_simplex(point)
                 self._containing_simplex_cache[point] = containing_simplex
             if containing_simplex is not None:
-                data_point_embeddings = containing_simplex.embed_point(point)
+                data_point_embeddings = containing_simplex._embed_point(point)
                 for local_idx, coordinate in enumerate(data_point_embeddings):
                     global_idx = containing_simplex.vertex_indices[local_idx]
                     barycentric_matrix[point_index, global_idx] = coordinate
         return barycentric_matrix
 
-    def normalize_data(self, data: np.ndarray) -> np.ndarray:
+    def _normalize_data(self, data: np.ndarray) -> np.ndarray:
         if len(data.shape) == 1:
             data = data.reshape(1, -1)
         min_vals = np.min(data, axis=0)
@@ -92,7 +98,17 @@ class SimplexTreeClassifier:
         return normalized
 
     def fit(self, X: np.ndarray, y: np.ndarray):
-        X_normalized = self.normalize_data(X)
+        """
+        Trains the classifier by embedding data points as barycentric coordinates and fitting LinearSVC.
+        
+        Args:
+            X: Training data of shape (n_samples, 2)
+            y: Target labels of shape (n_samples,)
+            
+        Returns:
+            self (fitted classifier)
+        """
+        X_normalized = self._normalize_data(X)
         X_transformed = self.transform(X_normalized)
         print(X_transformed.shape)
         self.classifier = LinearSVC(C=self.regularization)
@@ -100,14 +116,29 @@ class SimplexTreeClassifier:
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Predicts class labels for input data points.
+        
+        Args:
+            X: Data points of shape (n_samples, 2)
+            
+        Returns:
+            Array of predicted class labels
+        """
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
-        X_normalized = self.normalize_data(X)
+        X_normalized = self._normalize_data(X)
         X_transformed = self.transform(X_normalized)
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
     def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
+        """
+        Gets vertex coordinates of all leaf simplices for visualization.
+        
+        Returns:
+            List of vertex coordinate tuples for each leaf simplex
+        """
         return [leaf.get_vertices_as_tuples() for leaf in self.leaf_simplexes]
 
     def _simplex_crosses_boundary(self, simplex_node, weights, intercept) -> bool:
@@ -139,6 +170,15 @@ class SimplexTreeClassifier:
         return True
 
     def identify_svm_crossing_simplices(self) -> List[Dict]:
+        """
+        Finds leaf simplices that cross the SVM decision boundary.
+        
+        A simplex crosses the boundary if its vertices have both positive and negative
+        decision values (some vertices on each side of the hyperplane).
+        
+        Returns:
+            List of dicts with keys: 'simplex', 'vertices', 'decision_values'
+        """
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
         crossing_simplices = []
@@ -156,6 +196,15 @@ class SimplexTreeClassifier:
         return crossing_simplices
 
     def compute_svm_plane_equations(self) -> List[Dict]:
+        """
+        Computes the decision boundary plane equation within each crossing simplex.
+        
+        For each simplex that crosses the boundary, computes the linear equation
+        describing where the boundary intersects that simplex.
+        
+        Returns:
+            List of dicts with keys: 'simplex', 'vertices', 'plane_equation', 'coefficients', 'cartesian_form'
+        """
         crossing_simplices = self.identify_svm_crossing_simplices()
         weights = self.classifier.coef_[0]
         plane_equations = []
@@ -173,6 +222,15 @@ class SimplexTreeClassifier:
         return plane_equations
 
     def find_same_side_simplices(self) -> set:
+        """
+        Finds leaf simplices whose siblings are all on the same side of the decision boundary.
+        
+        These simplices can potentially be merged back into their parent since the
+        subdivision doesn't contribute to the decision boundary.
+        
+        Returns:
+            Set of frozenset vertex keys identifying mergeable simplices
+        """
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet.")
         weights = self.classifier.coef_[0]

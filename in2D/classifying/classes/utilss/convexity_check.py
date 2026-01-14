@@ -130,7 +130,7 @@ def find_average_point(simplex1_node, simplex2_node, weights, intercept, epsilon
 
 
 def is_point_in_red_area(point, containing_simplex, weights, intercept):
-    barycentric = containing_simplex.embed_point(tuple(point))
+    barycentric = containing_simplex._embed_point(tuple(point))
     if barycentric is None:
         return None
     
@@ -151,9 +151,9 @@ def check_convexity(simplex1_node, simplex2_node, weights, intercept, global_tre
     
     containing_simplex = None
     
-    if simplex1_node.point_inside_simplex(tuple(average_point)):
+    if simplex1_node._point_inside_simplex(tuple(average_point)):
         containing_simplex = simplex1_node
-    elif simplex2_node.point_inside_simplex(tuple(average_point)):
+    elif simplex2_node._point_inside_simplex(tuple(average_point)):
         containing_simplex = simplex2_node
     elif global_tree is not None:
         containing_simplex = global_tree.find_containing_simplex(tuple(average_point))

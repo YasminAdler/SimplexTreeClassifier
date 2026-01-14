@@ -94,7 +94,7 @@ ALGORITHM: EmbedDataPoints
    
 5.   IF containing_simplex IS NOT NULL:
 6.     // Get barycentric coordinates within this simplex
-7.     local_embeddings = containing_simplex.embed_point(point)
+7.     local_embeddings = containing_simplex._embed_point(point)
 8.     simplex_vertices = containing_simplex.get_vertices_as_tuples()
      
 9.     // Map local coordinates to global matrix positions

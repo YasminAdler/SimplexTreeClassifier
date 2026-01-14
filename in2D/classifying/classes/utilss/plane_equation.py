@@ -95,7 +95,7 @@ if __name__ == "__main__":
     cartesian_form = plane_eq.get_cartesian_form()
     print(f"Cartesian form: {cartesian_form}")
     
-    tree.add_barycentric_centers_recursively(1)
+    tree._add_barycentric_centers_recursively(1)
     
     leaves = tree.get_leaves()
 

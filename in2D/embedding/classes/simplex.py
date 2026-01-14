@@ -4,6 +4,7 @@ from typing import List, Tuple, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .vertex_registry import VertexRegistry
 
+## TODO LIST: change where everever it should not be Tuple[float, float] but an array of D variables 
 
 class Simplex:
     def __init__(self, vertex_indices: List[int], registry: 'VertexRegistry', tolerance: float = 1e-10):
@@ -15,11 +16,11 @@ class Simplex:
         self.n_vertices = len(vertex_indices)
         self.tolerance = tolerance
         
-        first_vertex = self.registry.get_vertex(vertex_indices[0])
+        first_vertex = self.registry._get_vertex(vertex_indices[0])
         self.dimension = len(first_vertex)
         
         for idx in vertex_indices:
-            v = self.registry.get_vertex(idx)
+            v = self.registry._get_vertex(idx)
             if len(v) != self.dimension:
                 raise ValueError("All vertices must have the same dimension")
         
@@ -30,7 +31,8 @@ class Simplex:
     
     @property
     def vertices(self) -> List[np.ndarray]:
-        return self.registry.get_vertices(self.vertex_indices)
+        """Returns list of vertex coordinates as numpy arrays."""
+        return self.registry._get_vertices(self.vertex_indices)
     
     def _build_transformation_matrix(self):
         vertices = self.vertices
@@ -51,13 +53,13 @@ class Simplex:
             try:
                 self.A_pseudo_inv = np.linalg.pinv(self.A)
                 self.is_degenerate = False
-                self.det_A = 1.0  
+                self.det_A = 1.0  ## TODO: now its useless i can check for if its almost 0 or smaller then a certain threshold i should throw it away bc it means the volume is almost 0
             except np.linalg.LinAlgError:
                 self.is_degenerate = True
                 self.A_pseudo_inv = None
                 self.det_A = 0.0
     
-    def embed_point(self, point: Tuple[float, float]) -> Optional[Tuple[float, ...]]:
+    def _embed_point(self, point: Tuple[float, float]) -> Optional[Tuple[float, ...]]: 
         if self.is_degenerate:
             return None
         P = np.array(point)
@@ -86,8 +88,8 @@ class Simplex:
                 try:
                     temp_simplex = Simplex(sub_vertex_indices, self.registry, self.tolerance)
                     
-                    if temp_simplex.point_inside_simplex(tuple(P)):
-                        coords = temp_simplex.embed_point(tuple(P))
+                    if temp_simplex._point_inside_simplex(tuple(P)):
+                        coords = temp_simplex._embed_point(tuple(P))
                         if coords is not None and all(c >= -self.tolerance for c in coords):
                             min_coord = min(coords)
                             if best_simplex is None or min_coord > best_simplex:
@@ -114,8 +116,8 @@ class Simplex:
                     return None
         return embeddings
 
-    def point_inside_simplex(self, point):
-        coords = self.embed_point(point)
+    def _point_inside_simplex(self, point): ## TODO: to change the name to is__point_inside_simplex()
+        coords = self._embed_point(point)
         if coords is None:
             return False
         
@@ -128,6 +130,7 @@ class Simplex:
         return True
     
     def get_vertices_as_tuples(self) -> List[Tuple[float, float]]:
+        """Returns list of vertex coordinates as tuples for easy iteration/display."""
         return self.registry.get_vertices_as_tuples(self.vertex_indices)
     
     def __repr__(self):

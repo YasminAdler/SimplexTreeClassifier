@@ -77,7 +77,7 @@ def _visualize_2d_simplex(vertices: List[Tuple[float, float]], ax, color: str, a
 
 
 def _visualize_2d_children_recursive(node, ax, colors, depth: int):
-    for i, child in enumerate(node.get_children()):
+    for i, child in enumerate(node._get_children()):
         child_vertices = child.get_vertices_as_tuples()
         color = colors[(depth + i) % len(colors)]
         _visualize_2d_simplex(child_vertices, ax, color, alpha=0.2, linewidth=1, s=30)
@@ -100,7 +100,7 @@ def visualize_subdivision_levels(base_vertices: List[Tuple[float, float]],
 
     for ax, level in zip(axes, levels):
         tree = SimplexTree(base_vertices)
-        tree.add_barycentric_centers_recursively(level)
+        tree._add_barycentric_centers_recursively(level)
         _visualize_2d_simplex(base_vertices, ax, 'red', alpha=0.3, linewidth=2, s=20)
         _visualize_2d_children_recursive(tree, ax, ['blue','green','orange','purple'], depth=0)
 

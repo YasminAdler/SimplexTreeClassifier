@@ -137,7 +137,7 @@ SimplexTreeClassifier(
 - Plots simplex tree with data points overlaid
 - Customizable figure size and title
 
-**`get_vertex_mapping()`**
+**`_get_vertex_mapping()`**
 - Returns dictionary mapping column indices to vertex coordinates
 - Useful for understanding which vertex each matrix column represents
 
@@ -149,7 +149,7 @@ SimplexTreeClassifier(
 - Displays ASCII tree structure showing hierarchical relationships
 - Shows vertex coordinates for each simplex
 
-**`traverse_breadth_first()`**
+**`_traverse_breadth_first()`**
 - Iterates through all nodes in breadth-first order
 - Used for consistent vertex ordering
 
@@ -203,7 +203,7 @@ For a row like `[0.4 0.3 0.3 0.0]`:
 - **0.3**: 30% weight toward vertex at column 2
 - **0.0**: 0% weight toward vertex at column 3 (not in containing simplex)
 
-Use `get_vertex_mapping()` to see which vertex each column represents.
+Use `_get_vertex_mapping()` to see which vertex each column represents.
 
 ## ⚙️ Configuration Options
 
@@ -237,7 +237,7 @@ predictions = classifier.predict(X_test)
 ```python
 # Transform data and analyze
 transformed = classifier.transform(data_points)
-vertex_mapping = classifier.get_vertex_mapping()
+vertex_mapping = classifier._get_vertex_mapping()
 
 # Check which vertices influence each point
 for i, row in enumerate(transformed.toarray()):
