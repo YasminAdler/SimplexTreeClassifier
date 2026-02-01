@@ -13,11 +13,8 @@ from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 
-## TODO LIST: change where everever it should not be Tuple[float, float] but an array of D variables 
-
-
 class SimplexTreeClassifier: 
-    def __init__(self, vertices: List[Tuple[float, float]] = None,
+    def __init__(self, vertices: List[Tuple[float, ...]] = None,
                  regularization=0.01, 
                  subdivision_levels=1,
                  classifier_type='linear_svc'):
@@ -132,7 +129,7 @@ class SimplexTreeClassifier:
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
-    def get_simplex_boundaries(self) -> List[List[Tuple[float, float]]]:
+    def get_simplex_boundaries(self) -> List[List[Tuple[float, ...]]]:
         """
         Gets vertex coordinates of all leaf simplices for visualization.
         
@@ -243,6 +240,10 @@ class SimplexTreeClassifier:
                 leaf_parents.add(leaf.parent)
         
         for parent in leaf_parents:
+            all_children_are_leaves = all(child._is_leaf() for child in parent.children)
+            if not all_children_are_leaves:
+                continue
+            
             if self._are_siblings_same_side(parent, weights, intercept):
                 for child in parent.children:
                     same_side_keys.add(frozenset(child.vertex_indices))

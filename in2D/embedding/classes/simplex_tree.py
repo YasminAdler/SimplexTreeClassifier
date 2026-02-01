@@ -12,10 +12,8 @@ sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
 
 
-## TODO LIST: change where everever it should not be Tuple[float, float] but an array of D variables 
- 
 class SimplexTree(Simplex):
-    def __init__(self, vertices: List[Tuple[float, float]], tolerance: float = 1e-10, 
+    def __init__(self, vertices: List[Tuple[float, ...]], tolerance: float = 1e-10, 
                  registry: Optional[VertexRegistry] = None, _is_child: bool = False):
         if registry is None:
             reg = VertexRegistry(tolerance)
@@ -48,7 +46,7 @@ class SimplexTree(Simplex):
         root._split_counter[0] += 1
         return idx
     
-    def _add_child(self, child_vertices: List[Tuple[float, float]]) -> 'SimplexTree':
+    def _add_child(self, child_vertices: List[Tuple[float, ...]]) -> 'SimplexTree':
         child = SimplexTree(child_vertices, self.tolerance, self.registry, _is_child=True)
         child.parent = self
         child.depth = self.depth + 1
@@ -60,8 +58,9 @@ class SimplexTree(Simplex):
     
     def _get_children(self) -> List['SimplexTree']:
         return self.children.copy()
-
-    def _remove_splitting_point(self, splitting_point_index: int) -> bool: ## TODO : i need to implement a check to see if other components need the point im removing 
+    
+    def _remove_splitting_point(self, splitting_point_index: int) -> bool:
+        """Remove a splitting point by clearing all its children and resetting the node to a leaf."""
         for node in self._traverse_breadth_first():
             if node.splitting_point_index == splitting_point_index:
                 for child in node.children:
@@ -116,7 +115,7 @@ class SimplexTree(Simplex):
                 leaves.append(node)
         return leaves
     
-    def find_containing_simplex(self, point: Tuple[float, float]) -> Optional['SimplexTree']:
+    def find_containing_simplex(self, point: Tuple[float, ...]) -> Optional['SimplexTree']:
         """
         Finds the leaf simplex containing the given point.
         
@@ -147,7 +146,7 @@ class SimplexTree(Simplex):
         vertex_str = str(vertices)
         return f"{self.__class__.__name__}(vertices={vertex_str}, children={len(self.children)}, depth={self.depth})"
     
-    def _add_splitting_point(self, point: Tuple[float, float]) -> List['SimplexTree']: ## TODO: it should not be Tuple[float, float] but an array of D variables 
+    def _add_splitting_point(self, point: Tuple[float, ...]) -> List['SimplexTree']:
         if not self._is_leaf():
             for child in self.children:
                 if child._point_inside_simplex(point):
@@ -161,22 +160,16 @@ class SimplexTree(Simplex):
         self.splitting_point_vertex_index = vertex_indices[0]
 
         vertices = self.get_vertices_as_tuples()
+        n_vertices = len(vertices)
         
-        if len(vertices) == 3:
-            children = []
-            for i in range(3):
-                v1 = vertices[i]
-                v2 = vertices[(i + 1) % 3]
-                child_vertices = [v1, v2, tuple(point)]
-                child = self._add_child(child_vertices)
-                children.append(child)
-            return children
-        else:
-            extended_vertices = list(vertices) + [tuple(point)]
-            extended_child = self._add_child(extended_vertices)
-            return [extended_child]
+        children = []
+        for i in range(n_vertices):
+            child_vertices = [v for j, v in enumerate(vertices) if j != i] + [tuple(point)]
+            child = self._add_child(child_vertices)
+            children.append(child)
+        return children
     
-    def _compute_barycentric_center(self) -> Tuple[float, float]: ## TODO: private writing
+    def _compute_barycentric_center(self) -> Tuple[float, ...]:
         vertices = self.vertices
         center = np.mean(vertices, axis=0)
         return tuple(float(x) for x in center)
@@ -216,14 +209,14 @@ class SimplexTree(Simplex):
                 else:
                     label = f"vertices: {node.vertex_indices}"
                 print(f"{prefix}{connector}{label}")
-                new_prefix = prefix + ("    " if is_last else "│   ")
-                child_count = len(node.children)
-                for idx, child in enumerate(node.children):
-                    _print(child, new_prefix, idx == child_count - 1)
+            new_prefix = prefix + ("    " if is_last else "│   ")
+            child_count = len(node.children)
+            for idx, child in enumerate(node.children):
+                _print(child, new_prefix, idx == child_count - 1)
 
         _print(self)
-    
-    def get_splitting_points(self) -> List[Tuple[int, Tuple[float, float]]]:
+
+    def get_splitting_points(self) -> List[Tuple[int, Tuple[float, ...]]]:
         """
         Returns all splitting points currently in the tree.
         
@@ -238,5 +231,4 @@ class SimplexTree(Simplex):
                 coords = tuple(self.registry._get_vertex(node.splitting_point_vertex_index))
                 splitting_points.append((node.splitting_point_index, coords))
         return splitting_points
-    
     

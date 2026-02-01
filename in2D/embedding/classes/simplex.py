@@ -4,8 +4,6 @@ from typing import List, Tuple, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .vertex_registry import VertexRegistry
 
-## TODO LIST: change where everever it should not be Tuple[float, float] but an array of D variables 
-
 class Simplex:
     def __init__(self, vertex_indices: List[int], registry: 'VertexRegistry', tolerance: float = 1e-10):
         if len(vertex_indices) < 2:
@@ -59,7 +57,7 @@ class Simplex:
                 self.A_pseudo_inv = None
                 self.det_A = 0.0
     
-    def _embed_point(self, point: Tuple[float, float]) -> Optional[Tuple[float, ...]]: 
+    def _embed_point(self, point: Tuple[float, ...]) -> Optional[Tuple[float, ...]]: 
         if self.is_degenerate:
             return None
         P = np.array(point)
@@ -129,7 +127,7 @@ class Simplex:
     
         return True
     
-    def get_vertices_as_tuples(self) -> List[Tuple[float, float]]:
+    def get_vertices_as_tuples(self) -> List[Tuple[float, ...]]:
         """Returns list of vertex coordinates as tuples for easy iteration/display."""
         return self.registry.get_vertices_as_tuples(self.vertex_indices)
     

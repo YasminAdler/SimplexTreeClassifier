@@ -78,6 +78,22 @@ def find_external_crossing(simplex_node, line_coeffs, shared_vertices):
 
 
 def find_epsilon_points(simplex1_node, simplex2_node, weights, intercept, epsilon):
+    """
+    Find test points along the SVM boundary for convexity checking.
+    
+    Args:
+        simplex1_node: First adjacent simplex
+        simplex2_node: Second adjacent simplex  
+        weights: SVM hyperplane weights
+        intercept: SVM hyperplane intercept
+        epsilon: Fraction (0-1) of distance from meeting point to external crossing.
+                 e.g., 0.3 = 30% of the way toward the external crossing.
+    
+    Returns:
+        meeting_point: Where SVM crosses the shared edge
+        point1: Test point in simplex1 direction
+        point2: Test point in simplex2 direction
+    """
     shared_vertices = get_shared_vertices(simplex1_node, simplex2_node)
     
     if len(shared_vertices) < 2:
@@ -109,9 +125,10 @@ def find_epsilon_points(simplex1_node, simplex2_node, weights, intercept, epsilo
     if norm1 < 1e-10 or norm2 < 1e-10:
         return meeting_point, None, None
     
-    # Move epsilon distance along the SVM boundary
-    point1 = meeting_point + epsilon * (dir1 / norm1)
-    point2 = meeting_point + epsilon * (dir2 / norm2)
+    # Move epsilon fraction (0-1) along the direction toward external crossing
+    # epsilon=0.3 means 30% of the way from meeting point to external crossing
+    point1 = meeting_point + epsilon * dir1
+    point2 = meeting_point + epsilon * dir2
     
     return meeting_point, point1, point2
 
@@ -141,7 +158,29 @@ def is_point_in_red_area(point, containing_simplex, weights, intercept):
     return decision_value >= 0
 
 
-def check_convexity(simplex1_node, simplex2_node, weights, intercept, global_tree=None, epsilon=0.02):
+def check_convexity(simplex1_node, simplex2_node, weights, intercept, global_tree=None, epsilon=0.3):
+    """
+    Check if the SVM boundary between two adjacent simplices is convex.
+    
+    Creates test points along the SVM boundary and checks if the average point
+    falls on the expected side of the hyperplane.
+    
+    Args:
+        simplex1_node: First adjacent simplex
+        simplex2_node: Second adjacent simplex
+        weights: SVM hyperplane weights
+        intercept: SVM hyperplane intercept
+        global_tree: Optional tree to search for containing simplex if average
+                     point falls outside both input simplices
+        epsilon: Fraction (0-1) of distance from meeting point to external crossing.
+                 Default 0.3 = 30% of the way. Higher values sample further out.
+    
+    Returns:
+        is_convex: True if convex (or undetermined), False if non-convex
+        average_point: The test point used for checking
+        meeting: Where SVM crosses the shared edge
+        pt1, pt2: The epsilon test points in each simplex direction
+    """
     average_point, meeting, pt1, pt2 = find_average_point(
         simplex1_node, simplex2_node, weights, intercept, epsilon
     )
