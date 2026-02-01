@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 def generate_dataset(n_samples=1000, gamma=0.01, dimensions=2, num_hyperplanes=8, seed=None):
     if seed is not None:
@@ -29,6 +30,11 @@ def generate_dataset(n_samples=1000, gamma=0.01, dimensions=2, num_hyperplanes=8
 
 if __name__ == "__main__":
     X, y = generate_dataset(n_samples=1000, gamma=0.01, dimensions=2, num_hyperplanes=8, seed=42)
+    
+    scaler = MinMaxScaler()
+    X = scaler.fit_transform(X)
+    
     np.savez('dataset.npz', X=X, y=y)
     print(f"Saved dataset: {X.shape[0]} points, Classes: {np.unique(y)}")
+    print(f"Data normalized to range [0, 1]")
 
