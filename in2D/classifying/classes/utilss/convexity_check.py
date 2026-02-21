@@ -9,6 +9,15 @@ sys.path.insert(0, in2d_dir)
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 
 
+def _ensure_dense_weights(weights):
+    """Convert sparse matrix to dense array if needed (OneClassSVM returns sparse)."""
+    if hasattr(weights, 'toarray'):
+        return weights.toarray().flatten()
+    elif hasattr(weights, 'A'):
+        return np.asarray(weights).flatten()
+    return weights
+
+
 def get_shared_vertices(simplex1_node, simplex2_node):
     set1 = set(tuple(v) for v in simplex1_node.vertices)
     set2 = set(tuple(v) for v in simplex2_node.vertices)
@@ -151,6 +160,7 @@ def is_point_in_red_area(point, containing_simplex, weights, intercept):
     if barycentric is None:
         return None
     
+    weights = _ensure_dense_weights(weights)
     vertex_decisions = [weights[idx] + intercept for idx in containing_simplex.vertex_indices]
     
     decision_value = np.dot(vertex_decisions, barycentric)

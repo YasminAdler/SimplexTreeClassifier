@@ -15,15 +15,23 @@ from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
 
 class SimplexTreeClassifier: 
     def __init__(self, vertices: List[Tuple[float, ...]] = None,
-                 regularization=0.01, 
-                 subdivision_levels=1,
-                 classifier_type='linear_svc'):
+                 classifier=None,
+                 subdivision_levels=1):
+        """
+        Initialize SimplexTreeClassifier.
+        
+        Args:
+            vertices: Initial simplex vertices
+            classifier: Any sklearn-compatible estimator instance with .fit() and .predict().
+                        Examples: LinearSVC(C=1000), SVC(kernel='rbf'), OneClassSVM(kernel='linear', nu=0.1)
+                        Defaults to LinearSVC(C=1.0) if None.
+            subdivision_levels: Number of barycentric subdivisions
+        """
         if vertices is None:
             vertices = [(0, 0), (2, 0), (0, 2)]
         self.tree = SimplexTree(vertices)
-        self.regularization = regularization
         self.subdivision_levels = subdivision_levels
-        self.classifier = None
+        self.classifier = classifier if classifier is not None else LinearSVC(C=1.0)
         self.leaf_simplexes = []
         self.all_nodes_lookup = {}
         self._containing_simplex_cache = {}
@@ -94,22 +102,26 @@ class SimplexTreeClassifier:
         normalized = (data - min_vals) / (max_vals - min_vals + 1e-10)
         return normalized
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    def fit(self, X: np.ndarray, y: np.ndarray = None):
         """
-        Trains the classifier by embedding data points as barycentric coordinates and fitting LinearSVC.
+        Trains the classifier by embedding data points as barycentric coordinates.
         
         Args:
-            X: Training data of shape (n_samples, 2)
-            y: Target labels of shape (n_samples,)
+            X: Training data of shape (n_samples, n_features)
+            y: Target labels of shape (n_samples,).
+               Pass None for unsupervised classifiers (e.g. OneClassSVM).
             
         Returns:
             self (fitted classifier)
         """
         X_normalized = self._normalize_data(X)
         X_transformed = self.transform(X_normalized)
-        print(X_transformed.shape)
-        self.classifier = LinearSVC(C=self.regularization)
-        self.classifier.fit(X_transformed, y)
+        
+        if y is not None:
+            self.classifier.fit(X_transformed, y)
+        else:
+            self.classifier.fit(X_transformed)
+        
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -137,6 +149,27 @@ class SimplexTreeClassifier:
             List of vertex coordinate tuples for each leaf simplex
         """
         return [leaf.get_vertices_as_tuples() for leaf in self.leaf_simplexes]
+
+    def _get_weights_and_intercept(self):
+        """
+        Extracts weights and intercept from the fitted classifier.
+        Requires the classifier to have coef_ and intercept_ attributes (linear classifiers).
+        """
+        if self.classifier is None:
+            raise ValueError("Classifier not fitted yet. Call fit() first.")
+        if not hasattr(self.classifier, 'coef_'):
+            raise AttributeError(
+                f"{type(self.classifier).__name__} has no coef_ attribute. "
+                "Boundary analysis requires a linear classifier (e.g. LinearSVC, "
+                "OneClassSVM with kernel='linear')."
+            )
+        weights = self.classifier.coef_[0]
+        if hasattr(weights, 'toarray'):
+            weights = weights.toarray().flatten()
+        elif hasattr(weights, 'A'):
+            weights = np.asarray(weights).flatten()
+        intercept = self.classifier.intercept_[0]
+        return weights, intercept
 
     def _simplex_crosses_boundary(self, simplex_node, weights, intercept) -> bool:
         decision_values = [weights[idx] + intercept for idx in simplex_node.vertex_indices]
@@ -176,11 +209,8 @@ class SimplexTreeClassifier:
         Returns:
             List of dicts with keys: 'simplex', 'vertices', 'decision_values'
         """
-        if self.classifier is None:
-            raise ValueError("Classifier not fitted yet. Call fit() first.")
+        weights, intercept = self._get_weights_and_intercept()
         crossing_simplices = []
-        weights = self.classifier.coef_[0]
-        intercept = self.classifier.intercept_[0]
         for leaf in self.leaf_simplexes:
             if self._simplex_crosses_boundary(leaf, weights, intercept):
                 vertices = leaf.get_vertices_as_tuples()
@@ -203,7 +233,7 @@ class SimplexTreeClassifier:
             List of dicts with keys: 'simplex', 'vertices', 'plane_equation', 'coefficients', 'cartesian_form'
         """
         crossing_simplices = self.identify_svm_crossing_simplices()
-        weights = self.classifier.coef_[0]
+        weights, _ = self._get_weights_and_intercept()
         plane_equations = []
         for crossing_info in crossing_simplices:
             simplex = crossing_info['simplex']
@@ -228,11 +258,7 @@ class SimplexTreeClassifier:
         Returns:
             Set of frozenset vertex keys identifying mergeable simplices
         """
-        if self.classifier is None:
-            raise ValueError("Classifier not fitted yet.")
-        weights = self.classifier.coef_[0]
-        intercept = self.classifier.intercept_[0]
-        
+        weights, intercept = self._get_weights_and_intercept()
         same_side_keys = set()
         leaf_parents = set()
         for leaf in self.leaf_simplexes:

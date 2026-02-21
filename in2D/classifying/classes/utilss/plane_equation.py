@@ -17,6 +17,11 @@ class PlaneEquation:
         self.normalized_coefficients = None
         
     def compute_plane_from_weights(self, weight_vector: np.ndarray, intercept: float = 0.0) -> np.ndarray:
+        # Convert sparse matrix to dense array if needed (OneClassSVM returns sparse)
+        if hasattr(weight_vector, 'toarray'):
+            weight_vector = weight_vector.toarray().flatten()
+        elif hasattr(weight_vector, 'A'):
+            weight_vector = np.asarray(weight_vector).flatten()
         simplex_weights = np.asarray(weight_vector)[self.simplex.vertex_indices]
         plane_eq = self.simplex.A_inv.T @ (simplex_weights[1:] - simplex_weights[0])
         constant = (simplex_weights[0] + intercept) - plane_eq @ self.simplex.vertices[0]

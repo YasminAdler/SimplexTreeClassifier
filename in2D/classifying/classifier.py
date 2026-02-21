@@ -131,9 +131,8 @@ def visualize_subdivision_level(ax, X: np.ndarray, y: np.ndarray,
     # Create and train model
     model = SimplexTreeClassifier(
         vertices=[(0, 0), (2, 0), (0, 2)],
-        regularization=regularization,
+        classifier=SVC(C=regularization),
         subdivision_levels=subdivision_level,
-        classifier_type='svc'
     )
     model.fit(X, y)
     
@@ -206,9 +205,8 @@ def visualize_all_levels_with_plane_lines(X: np.ndarray, y: np.ndarray,
         print(f"Running for subdivision_levels k={k}")
         model = SimplexTreeClassifier(
             vertices=[(0, 0), (2, 0), (0, 2)],
-            regularization=regularization,
+            classifier=SVC(C=regularization),
             subdivision_levels=k,
-            classifier_type='svc'
         )
         model.fit(X, y)
         
