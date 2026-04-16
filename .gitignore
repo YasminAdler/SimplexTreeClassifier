@@ -83,3 +83,6 @@ venv.bak/
 dmypy.json
 
 in2D/tests/datasets/*
+in2D/tests/dataset_2d.npz
+in2D/tests/dataset_2d_notch.npz
+images_for_paper

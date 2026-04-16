@@ -115,6 +115,30 @@ class SimplexTree(Simplex):
                 leaves.append(node)
         return leaves
     
+    def find_adjacent_simplexes(self, leaf: 'SimplexTree') -> List['SimplexTree']:
+        """
+        Finds all leaf simplexes adjacent to the given leaf.
+        
+        Two leaf simplexes are adjacent if they share at least d vertices
+        (a (d-1)-dimensional face), where d is the dimension of the space.
+        
+        Args:
+            leaf: A leaf SimplexTree node
+            
+        Returns:
+            List of adjacent leaf SimplexTree nodes
+        """
+        leaf_vertex_set = set(leaf.vertex_indices)
+        min_shared = leaf.dimension
+        adjacent = []
+        for other in self.get_leaves():
+            if other is leaf:
+                continue
+            shared_count = len(leaf_vertex_set.intersection(other.vertex_indices))
+            if shared_count >= min_shared:
+                adjacent.append(other)
+        return adjacent
+
     def find_containing_simplex(self, point: Tuple[float, ...]) -> Optional['SimplexTree']:
         """
         Finds the leaf simplex containing the given point.

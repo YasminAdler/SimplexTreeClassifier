@@ -6,10 +6,13 @@ import sys
 import os
 from typing import Tuple, List, Dict, Optional
 
-current_dir = os.path.abspath('.')
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-from classes.simplex_tree_classifier import SimplexTreeClassifier
+current_dir = os.path.dirname(os.path.abspath(__file__))
+in2d_dir = os.path.join(current_dir, '..', '..')
+for p in [current_dir, in2d_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+from in2D.classifying.classes.simplex_tree_classifier import SimplexTreeClassifier
 
 
 def make_meshgrid(x: np.ndarray, y: np.ndarray, h: float = 0.01) -> Tuple[np.ndarray, np.ndarray]:

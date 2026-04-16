@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Set
 from scipy.sparse import lil_matrix, issparse
 from sklearn.svm import LinearSVC
 import sys
@@ -12,6 +12,7 @@ sys.path.insert(0, in2d_dir)
 from embedding.classes.simplex_tree import SimplexTree
 from embedding.utilss.visualization import visualize_simplex_tree
 from in2D.classifying.classes.utilss.plane_equation import PlaneEquation
+from in2D.classifying.classes.utilss.convexity_check import check_convexity
 
 class SimplexTreeClassifier: 
     def __init__(self, vertices: List[Tuple[float, ...]] = None,
@@ -141,6 +142,20 @@ class SimplexTreeClassifier:
         predictions = self.classifier.predict(X_transformed)
         return predictions
 
+    def find_adjacent_simplexes(self, leaf) -> list:
+        """
+        Finds all leaf simplexes adjacent to the given leaf.
+        
+        Delegates to the underlying SimplexTree.
+        
+        Args:
+            leaf: A leaf SimplexTree node
+            
+        Returns:
+            List of adjacent leaf SimplexTree nodes
+        """
+        return self.tree.find_adjacent_simplexes(leaf)
+
     def get_simplex_boundaries(self) -> List[List[Tuple[float, ...]]]:
         """
         Gets vertex coordinates of all leaf simplices for visualization.
@@ -150,18 +165,28 @@ class SimplexTreeClassifier:
         """
         return [leaf.get_vertices_as_tuples() for leaf in self.leaf_simplexes]
 
+    @property
+    def is_linear_classifier(self):
+        """Check if the internal classifier exposes linear weights (coef_ and intercept_)."""
+        return (hasattr(self.classifier, 'coef_') and
+                hasattr(self.classifier, 'intercept_'))
+
+    def get_weights_and_intercept(self):
+        """
+        Public accessor for the fitted classifier's weight vector and intercept.
+        Only works for linear classifiers (LinearSVC, LogisticRegression, Perceptron, etc.).
+        Raises AttributeError for non-linear classifiers.
+        """
+        return self._get_weights_and_intercept()
+
     def _get_weights_and_intercept(self):
-        """
-        Extracts weights and intercept from the fitted classifier.
-        Requires the classifier to have coef_ and intercept_ attributes (linear classifiers).
-        """
         if self.classifier is None:
             raise ValueError("Classifier not fitted yet. Call fit() first.")
-        if not hasattr(self.classifier, 'coef_'):
+        if not self.is_linear_classifier:
             raise AttributeError(
                 f"{type(self.classifier).__name__} has no coef_ attribute. "
-                "Boundary analysis requires a linear classifier (e.g. LinearSVC, "
-                "OneClassSVM with kernel='linear')."
+                "This method requires a linear classifier (e.g. LinearSVC, "
+                "LogisticRegression, Perceptron)."
             )
         weights = self.classifier.coef_[0]
         if hasattr(weights, 'toarray'):
@@ -170,6 +195,16 @@ class SimplexTreeClassifier:
             weights = np.asarray(weights).flatten()
         intercept = self.classifier.intercept_[0]
         return weights, intercept
+
+    def _predict_at_vertices(self, simplex_node):
+        """Evaluate the classifier at each vertex using one-hot barycentric vectors."""
+        n_vertices = len(self.tree.registry)
+        predictions = []
+        for vid in simplex_node.vertex_indices:
+            one_hot = lil_matrix((1, n_vertices))
+            one_hot[0, vid] = 1.0
+            predictions.append(self.classifier.predict(one_hot)[0])
+        return np.array(predictions)
 
     def _simplex_crosses_boundary(self, simplex_node, weights, intercept) -> bool:
         decision_values = [weights[idx] + intercept for idx in simplex_node.vertex_indices]
@@ -199,28 +234,47 @@ class SimplexTreeClassifier:
                 
         return True
 
-    def identify_svm_crossing_simplices(self) -> List[Dict]:
+    def identify_crossing_simplices(self) -> List[Dict]:
         """
-        Finds leaf simplices that cross the SVM decision boundary.
-        
-        A simplex crosses the boundary if its vertices have both positive and negative
-        decision values (some vertices on each side of the hyperplane).
-        
+        Finds leaf simplices that cross the decision boundary.
+        Works with any classifier — uses weight-based check for linear classifiers,
+        falls back to prediction-based check for non-linear ones.
+
         Returns:
-            List of dicts with keys: 'simplex', 'vertices', 'decision_values'
+            List of dicts with keys: 'simplex', 'vertices'
+            (also 'decision_values' when the classifier is linear)
         """
-        weights, intercept = self._get_weights_and_intercept()
+        use_linear = self.is_linear_classifier
+        if use_linear:
+            weights, intercept = self._get_weights_and_intercept()
+
         crossing_simplices = []
         for leaf in self.leaf_simplexes:
-            if self._simplex_crosses_boundary(leaf, weights, intercept):
-                vertices = leaf.get_vertices_as_tuples()
-                decision_values = np.array([weights[idx] for idx in leaf.vertex_indices])
-                crossing_simplices.append({
+            if use_linear:
+                crosses = self._simplex_crosses_boundary(leaf, weights, intercept)
+            else:
+                preds = self._predict_at_vertices(leaf)
+                crosses = not np.all(preds == preds[0])
+
+            if crosses:
+                info = {
                     'simplex': leaf,
-                    'vertices': vertices,
-                    'decision_values': decision_values,
-                })
+                    'vertices': leaf.get_vertices_as_tuples(),
+                }
+                if use_linear:
+                    info['decision_values'] = np.array([weights[idx] for idx in leaf.vertex_indices])
+                crossing_simplices.append(info)
+
         return crossing_simplices
+
+    def identify_svm_crossing_simplices(self) -> List[Dict]:
+        """Backward-compatible alias. Requires a linear classifier."""
+        if not self.is_linear_classifier:
+            raise AttributeError(
+                f"{type(self.classifier).__name__} is not a linear classifier. "
+                "Use identify_crossing_simplices() instead."
+            )
+        return self.identify_crossing_simplices()
 
     def compute_svm_plane_equations(self) -> List[Dict]:
         """
@@ -275,3 +329,37 @@ class SimplexTreeClassifier:
                     same_side_keys.add(frozenset(child.vertex_indices))
         
         return same_side_keys
+
+    def find_nonconvex_simplexes(self, epsilon: float = 0.30) -> Set[frozenset]:
+        """
+        Finds leaf simplices where the decision boundary is non-convex.
+        
+        For each pair of adjacent crossing simplices, checks whether the
+        boundary between them is convex. Requires a linear classifier.
+        
+        Args:
+            epsilon: Fraction (0-1) of distance from meeting point to external
+                     crossing used for the convexity test. Default 0.30.
+            
+        Returns:
+            Set of frozenset vertex keys identifying non-convex simplices
+        """
+        weights, intercept = self._get_weights_and_intercept()
+        crossing_simplices = self.identify_crossing_simplices()
+        crossing_set = {id(info['simplex']) for info in crossing_simplices}
+        
+        nonconvex_keys = set()
+        for info in crossing_simplices:
+            simplex1 = info['simplex']
+            for simplex2 in self.find_adjacent_simplexes(simplex1):
+                if id(simplex2) not in crossing_set:
+                    continue
+                is_convex, *_ = check_convexity(
+                    simplex1, simplex2, weights, intercept,
+                    global_tree=self.tree, epsilon=epsilon
+                )
+                if not is_convex:
+                    nonconvex_keys.add(frozenset(simplex1.vertex_indices))
+                    nonconvex_keys.add(frozenset(simplex2.vertex_indices))
+        
+        return nonconvex_keys
