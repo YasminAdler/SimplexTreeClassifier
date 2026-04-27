@@ -122,6 +122,10 @@ class SimplexTree(Simplex):
         Two leaf simplexes are adjacent if they share at least d vertices
         (a (d-1)-dimensional face), where d is the dimension of the space.
         
+        Walks up the tree level by level — at each ancestor, checks the
+        sibling subtrees for adjacent leaves (siblings, cousins, second
+        cousins, etc.).
+        
         Args:
             leaf: A leaf SimplexTree node
             
@@ -131,12 +135,24 @@ class SimplexTree(Simplex):
         leaf_vertex_set = set(leaf.vertex_indices)
         min_shared = leaf.dimension
         adjacent = []
-        for other in self.get_leaves():
-            if other is leaf:
-                continue
-            shared_count = len(leaf_vertex_set.intersection(other.vertex_indices))
-            if shared_count >= min_shared:
-                adjacent.append(other)
+        seen = set()
+
+        current = leaf
+        while current.parent is not None:
+            parent = current.parent
+            for sibling in parent.children:
+                if sibling is current:
+                    continue
+                candidates = [sibling] if sibling._is_leaf() else sibling.get_leaves()
+                for candidate in candidates:
+                    if id(candidate) not in seen:
+                        if len(leaf_vertex_set.intersection(candidate.vertex_indices)) >= min_shared:
+                            adjacent.append(candidate)
+                            seen.add(id(candidate))
+                            if len(adjacent) == leaf.dimension + 1:
+                                return adjacent
+            current = parent
+
         return adjacent
 
     def find_containing_simplex(self, point: Tuple[float, ...]) -> Optional['SimplexTree']:
