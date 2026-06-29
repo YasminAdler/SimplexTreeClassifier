@@ -62,12 +62,21 @@ def generate_dataset_nd(n_samples=1000, dimensions=3, gamma=0.01, margin=0.10, n
     return X, y
 
 
-def create_simplex_vertices(dimensions):
+def create_simplex_vertices(dimensions, scale=None):
+    """
+    Create initial simplex vertices for n-dimensional space.
+    
+    The simplex must contain the unit cube [0,1]^n.
+    Scale defaults to the number of dimensions (e.g. 3 for 3D: 
+    (0,0,0), (3,0,0), (0,3,0), (0,0,3)).
+    """
+    if scale is None:
+        scale = float(dimensions)
     vertices = []
     vertices.append(tuple([0.0] * dimensions))
     for i in range(dimensions):
         vertex = [0.0] * dimensions
-        vertex[i] = 2.0
+        vertex[i] = scale
         vertices.append(tuple(vertex))
     return vertices
 

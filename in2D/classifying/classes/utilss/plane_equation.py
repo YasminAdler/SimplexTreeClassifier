@@ -32,44 +32,34 @@ class PlaneEquation:
         if self.plane_coefficients is None:
             raise ValueError("Plane equation not computed yet. Call compute_plane_from_weights first.")
         
-        coefficient_a, coefficient_b, coefficient_c = self.plane_coefficients
+        coeffs = self.plane_coefficients
+        var_names = [f"x{i+1}" for i in range(len(coeffs) - 1)]
+        constant = coeffs[-1]
         
         equation_parts = []
-        
-        if abs(coefficient_a) > 1e-10:
-            if coefficient_a == 1.0:
-                equation_parts.append("x")
-            elif coefficient_a == -1.0:
-                equation_parts.append("-x")
+        for i, (coeff, var) in enumerate(zip(coeffs[:-1], var_names)):
+            if abs(coeff) < 1e-10:
+                continue
+            if coeff == 1.0:
+                term = var
+            elif coeff == -1.0:
+                term = f"-{var}"
             else:
-                equation_parts.append(f"{coefficient_a:.4f}x")
+                term = f"{coeff:.4f}{var}"
+            
+            if equation_parts and coeff > 0:
+                equation_parts.append("+")
+            equation_parts.append(term)
         
-        if abs(coefficient_b) > 1e-10:
-            if coefficient_b > 0:
-                if equation_parts:
-                    equation_parts.append("+")
-                if coefficient_b == 1.0:
-                    equation_parts.append("z")
-                else:
-                    equation_parts.append(f"{coefficient_b:.4f}z")
-            else:
-                if coefficient_b == -1.0:
-                    equation_parts.append("- z" if equation_parts else "-z")
-                else:
-                    equation_parts.append(f"- {abs(coefficient_b):.4f}z" if equation_parts else f"{coefficient_b:.4f}z")
-        
-        if abs(coefficient_c) > 1e-10:
-            if coefficient_c > 0:
-                if equation_parts:
-                    equation_parts.append("+")
-                equation_parts.append(f"{coefficient_c:.4f}")
-            else:
-                equation_parts.append(f"- {abs(coefficient_c):.4f}" if equation_parts else f"{coefficient_c:.4f}")
+        if abs(constant) > 1e-10:
+            if constant > 0 and equation_parts:
+                equation_parts.append("+")
+            equation_parts.append(f"{constant:.4f}")
         
         if not equation_parts:
-            return "y = 0"
+            return "0 = 0"
         
-        return "y = " + " ".join(equation_parts)
+        return " ".join(equation_parts) + " = 0"
     
     # def evaluate_at_point(self, x: float, y: float) -> float:
     #     if self.plane_coefficients is None:

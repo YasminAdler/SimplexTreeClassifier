@@ -363,3 +363,114 @@ class SimplexTreeClassifier:
                     nonconvex_keys.add(frozenset(simplex2.vertex_indices))
         
         return nonconvex_keys
+
+    def _sampling_epsilon(self, epsilon=None) -> float:
+        """
+        Epsilon used to place the two boundary test points, expressed as a
+        FORMULA of the simplex dimension d:  epsilon = 1 / (d + 1).
+
+        This is the barycentric fraction (e.g. 1/3 for 2-D triangles), so the
+        test points sit a fixed, dimension-aware fraction of the way from the
+        meeting point toward each simplex's external boundary crossing. Pass an
+        explicit value to override the formula.
+        """
+        if epsilon is not None:
+            return epsilon
+        return 1.0 / (self.tree.dimension + 1)
+
+    def find_nonconvex_leaves_by_distance(self, removal_factor: float = 0.15,
+                                          epsilon: float = None) -> Set[frozenset]:
+        """
+        Flag leaf simplices whose decision boundary is *strongly* non-convex,
+        using the distance between the shared-face MEETING point and the AVERAGE
+        point of the two epsilon test points.
+
+        This reuses the existing convexity_check geometry helpers
+        (``meeting_to_average_distance`` -> ``find_average_point``); it does not
+        rely on ``check_convexity``. For every pair of adjacent boundary-crossing
+        leaves it:
+
+          1. builds the meeting point and the two epsilon test points,
+          2. measures ``dist = ||average_point - meeting_point||``,
+          3. compares ``dist`` against a size threshold given by the formula
+             ``threshold = removal_factor * ||shared_face||``.
+
+        A pair is non-convex (and both leaves are flagged for removal) when
+        ``dist > threshold`` — i.e. the boundary bends away from the shared face
+        by more than ``removal_factor`` of the face's own length.
+
+        Args:
+            removal_factor: fraction of the shared-face length above which the
+                            meeting->average distance counts as "very non-convex".
+            epsilon: test-point placement fraction; defaults to the formula
+                     1/(d+1) via ``_sampling_epsilon``.
+
+        Returns:
+            Set of frozenset vertex keys identifying non-convex leaves.
+        """
+        weights, intercept = self._get_weights_and_intercept()
+        epsilon = self._sampling_epsilon(epsilon)
+
+        crossing_simplices = self.identify_crossing_simplices()
+        crossing_set = {id(info['simplex']) for info in crossing_simplices}
+
+        nonconvex_keys = set()
+        for info in crossing_simplices:
+            simplex1 = info['simplex']
+            for simplex2 in self.find_adjacent_simplexes(simplex1):
+                if id(simplex2) not in crossing_set:
+                    continue
+
+                distance, *_ = meeting_to_average_distance(
+                    simplex1, simplex2, weights, intercept, epsilon
+                )
+                if distance is None:
+                    continue
+
+                face_len = shared_face_length(simplex1, simplex2)
+                if face_len is None:
+                    continue
+
+                threshold = removal_factor * face_len
+                if distance > threshold:
+                    nonconvex_keys.add(frozenset(simplex1.vertex_indices))
+                    nonconvex_keys.add(frozenset(simplex2.vertex_indices))
+
+        return nonconvex_keys
+
+    def remove_nonconvex_leaves_once(self, removal_factor: float = 0.15,
+                                     epsilon: float = None,
+                                     max_remove_frac: float = 0.25) -> int:
+        """
+        Single removal pass over the current tree.
+
+        Walks the leaves **one by one**; for each leaf that is flagged
+        non-convex by ``find_nonconvex_leaves_by_distance`` it undoes that
+        leaf's subdivision (``remove_by_leaf_key``). The pass stops as soon as
+        the NET number of removed leaves reaches ``max_remove_frac`` (default
+        25%) of the leaf count at the start of the pass — we count how many were
+        removed, not how many remain.
+
+        Returns the net number of leaves removed in this pass. The caller is
+        responsible for rebuilding the node lookup and refitting the classifier.
+        """
+        start_leaves = len(self.tree.get_leaves())
+        cap = int(start_leaves * max_remove_frac)
+        if cap < 1:
+            return 0
+
+        nonconvex_keys = self.find_nonconvex_leaves_by_distance(
+            removal_factor=removal_factor, epsilon=epsilon
+        )
+        if not nonconvex_keys:
+            return 0
+
+        for leaf in list(self.tree.get_leaves()):
+            removed_so_far = start_leaves - len(self.tree.get_leaves())
+            if removed_so_far >= cap:
+                break
+            key = frozenset(leaf.vertex_indices)
+            if key in nonconvex_keys:
+                self.tree.remove_by_leaf_key(key)
+
+        return start_leaves - len(self.tree.get_leaves())
