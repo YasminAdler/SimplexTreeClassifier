@@ -1,0 +1,11 @@
+{
+ "argv": [
+  "/home/yasmin/SimplexTreeClassifier/myvenv/bin/python",
+  "-m",
+  "ipykernel_launcher",
+  "-f",
+  "{connection_file}"
+ ],
+ "display_name": "venvpy",
+ "language": "python"
+}

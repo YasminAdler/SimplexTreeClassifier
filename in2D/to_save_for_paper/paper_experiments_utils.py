@@ -57,6 +57,42 @@ class FeatureGRU(nn.Module):
         return F.softmax(logits, dim=-1)
 
 
+class FeatureMLP(nn.Module):
+    """Fast feed-forward drop-in replacement for FeatureGRU.
+
+    Same public interface (``n_classes``, ``_logits``, ``forward``) so it works
+    unchanged with ``train_nn`` / ``predict_classes`` / ``predict_proba``. The
+    d input features go straight into a 2-hidden-layer MLP with ReLU. Because it
+    has no recurrence over the feature "sequence" it trains and evaluates several
+    times faster than the GRU while remaining a non-linear network to explain.
+
+    Binary (K==2): single sigmoid output, BCE loss, predict +/-1.
+    Multiclass (K>2): softmax over K outputs, CE loss, predict 0..K-1.
+    """
+
+    def __init__(self, d, n_classes=2, hidden=64):
+        super().__init__()
+        self.n_classes = n_classes
+        out_dim = 1 if n_classes == 2 else n_classes
+        self.net = nn.Sequential(
+            nn.Linear(d, hidden), nn.ReLU(),
+            nn.Linear(hidden, hidden), nn.ReLU(),
+        )
+        self.fc = nn.Linear(hidden, out_dim)
+
+    def _logits(self, x):
+        if x.dim() > 2:
+            x = x.reshape(x.shape[0], -1)   # accept (B, d, 1) too
+        return self.fc(self.net(x))
+
+    def forward(self, x):
+        """Returns probabilities (sigmoid for binary, softmax for multiclass)."""
+        logits = self._logits(x)
+        if self.n_classes == 2:
+            return torch.sigmoid(logits)
+        return F.softmax(logits, dim=-1)
+
+
 def train_nn(model, X_tr, y_tr, X_val, y_val, *,
              epochs=200, lr=0.01, batch_size=32, device=None):
     """Train the GRU. y_tr/y_val: binary +/-1 or multiclass 0..K-1 ints.
@@ -173,7 +209,31 @@ def _shared_face_length(leaf_a, leaf_b):
                for j in range(i + 1, len(shared)))
 
 
-def find_nonconvex_leaves(model, epsilon=0.05):
+def gate_nonconvex_depths(depths, keep_frac=None, min_depth=0.0):
+    """Apply the magnitude gates to an ALREADY-computed {leaf_key: depth} dict and
+    return a NEW filtered dict. This is the cheap part (a quantile + filter), split
+    out so callers can run the expensive detection ONCE and then gate for free:
+
+        depths_all = find_nonconvex_leaves(stc, epsilon=EPSILON)   # expensive
+        depths     = gate_nonconvex_depths(depths_all, keep_frac=0.25)  # ~free
+
+      * keep_frac: DATA-dependent. Keep only the deepest `keep_frac` fraction of the
+        flagged leaves; cutoff = (1 - keep_frac) quantile of the observed depths, so
+        it adapts to each model/dataset. Applied on top of min_depth.
+      * min_depth: absolute floor on the normalised bend depth.
+    With both None/0 the input is returned unchanged (as a copy).
+    """
+    if not depths:
+        return dict(depths)
+    thr = float(min_depth)
+    if keep_frac is not None and 0.0 < keep_frac < 1.0:
+        thr = max(thr, float(np.quantile(list(depths.values()), 1.0 - keep_frac)))
+    if thr > 0.0:
+        return {k: v for k, v in depths.items() if v >= thr}
+    return dict(depths)
+
+
+def find_nonconvex_leaves(model, epsilon=0.05, keep_frac=None, min_depth=0.0):
     """Returns {leaf_key: max_depth} across all hyperplanes (multiclass-aware).
 
     Implements the diabetes-notebook policy generalised to multiclass:
@@ -181,6 +241,20 @@ def find_nonconvex_leaves(model, epsilon=0.05):
     LinearSVC hyperplane, run check_convexity. If the average point lands on
     the wrong side, mark BOTH leaves non-convex and record the depth = normalised
     distance(meeting_point, average_point) for ranking deepest bends first.
+
+    Selectivity. The `check_convexity` sign test alone flags almost every
+    boundary-crossing leaf: a near-flat boundary's average test point sits ~on the
+    hyperplane, so which side it lands on is essentially numerical noise. `epsilon`
+    only moves the sampling points along the boundary; it does NOT gate magnitude.
+    Two optional magnitude gates make the criterion stricter so a convex MAJORITY
+    remains:
+      * keep_frac: DATA-dependent gate. Keep only the deepest `keep_frac` fraction
+        of the flagged leaves (e.g. 0.25 keeps the deepest quarter). The cutoff is
+        the (1 - keep_frac) quantile of the observed depths, so it adapts to each
+        model/dataset automatically. Applied on top of min_depth.
+      * min_depth: absolute floor on the normalised bend depth.
+    With both None/0 (the default) the behaviour is the original: every flagged
+    leaf is kept.
     """
     crossing = model.identify_crossing_simplices()
     crossing_ids = {id(info['simplex']) for info in crossing}
@@ -205,7 +279,8 @@ def find_nonconvex_leaves(model, epsilon=0.05):
                     key = frozenset(s.vertex_indices)
                     if d > depths.get(key, 0.0):
                         depths[key] = d
-    return depths
+    # Magnitude gates: drop shallow bends so only genuine non-convexity is flagged.
+    return gate_nonconvex_depths(depths, keep_frac=keep_frac, min_depth=min_depth)
 
 
 def remove_nonconvex_once(model, *, epsilon=0.05, remove_budget=None):

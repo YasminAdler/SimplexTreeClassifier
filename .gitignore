@@ -87,3 +87,9 @@ in2D/tests/dataset_2d.npz
 in2D/tests/dataset_2d_notch.npz
 images_for_paper
 adjacency_counter_example.png
+
+myvenv
+in2D/to_save_for_paper/_*
+in2D/to_save_for_paper/paper_writing.ltx
+in2D/to_save_for_paper/models/*
+in2D/to_save_for_paper/images/*

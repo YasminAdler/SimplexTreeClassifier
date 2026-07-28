@@ -207,6 +207,203 @@ SPECS = [
 
 
 # -----------------------------------------------------------------------------
+# New (MLP) experiments -- 6 additional OpenML datasets, GRU replaced by a fast
+# feed-forward MLP so the whole pipeline runs in a fraction of the time.
+# -----------------------------------------------------------------------------
+
+def binary_load(name, feat_prefix=None):
+    """Load block for a numeric binary OpenML dataset -> +1 / -1, RFE to 4."""
+    rename = ""
+    if feat_prefix:
+        rename = (f"all_feature_names = [f'{feat_prefix}{{i+1}}' "
+                  f"for i in range(X_df.shape[1])]\n")
+    else:
+        rename = "all_feature_names = list(X_df.columns)\n"
+    return (
+        "from sklearn.feature_selection import RFE\n"
+        "from sklearn.linear_model import LogisticRegression\n\n"
+        f"ds = fetch_openml(name='{name}', version=1, as_frame=True, parser='auto')\n"
+        "X_df = ds.data.select_dtypes(include=[np.number]).astype(np.float64)\n"
+        + rename +
+        "classes = np.unique(ds.target.astype(str))\n"
+        "# binary target +1 / -1\n"
+        "y = np.where(ds.target.astype(str).values == classes[0], -1.0, 1.0)\n"
+        f"print('{name} shape:', X_df.shape, '  class counts:',\n"
+        "      dict(zip(*np.unique(y, return_counts=True))))\n\n"
+        "X_all = MinMaxScaler().fit_transform(X_df.values)\n\n"
+        "X_tr_all, X_te_all, y_train, y_test = train_test_split(\n"
+        "    X_all, y, test_size=0.2, random_state=42, stratify=y)\n\n"
+        "N_SELECT = 4\n"
+        "rfe = RFE(LogisticRegression(max_iter=2000),\n"
+        "          n_features_to_select=min(N_SELECT, X_all.shape[1]))\n"
+        "rfe.fit(X_tr_all, y_train)\n"
+        "sel = rfe.support_\n"
+        "feature_names = [n for n, k in zip(all_feature_names, sel) if k]\n"
+        "X_train = X_tr_all[:, sel]\n"
+        "X_test  = X_te_all[:, sel]\n"
+        "n_features = int(sel.sum())\n\n"
+        "print(f'RFE-selected features ({n_features}): {feature_names}')\n"
+        "print(f'{X_all.shape[0]} samples | Train {len(X_train)} | Test {len(X_test)}')\n"
+        "print(f'Class balance (train): +1={int((y_train==1).sum())}  -1={int((y_train==-1).sum())}')"
+    )
+
+
+def multiclass_load(name):
+    """Load block for a numeric multiclass OpenML dataset -> 0..K-1, RFE to 4."""
+    return (
+        "from sklearn.feature_selection import RFE\n"
+        "from sklearn.linear_model import LogisticRegression\n\n"
+        f"ds = fetch_openml(name='{name}', version=1, as_frame=True, parser='auto')\n"
+        "X_df = ds.data.select_dtypes(include=[np.number]).astype(np.float64)\n"
+        "all_feature_names = list(X_df.columns)\n"
+        "labels = np.unique(ds.target.astype(str))\n"
+        "label_to_idx = {c: i for i, c in enumerate(labels)}\n"
+        "y = np.array([label_to_idx[v] for v in ds.target.astype(str).values])\n"
+        "class_names = list(labels)\n"
+        f"print('{name} shape:', X_df.shape, '  class counts:',\n"
+        "      dict(zip(*np.unique(y, return_counts=True))))\n\n"
+        "X_all = MinMaxScaler().fit_transform(X_df.values)\n\n"
+        "X_tr_all, X_te_all, y_train, y_test = train_test_split(\n"
+        "    X_all, y, test_size=0.2, random_state=42, stratify=y)\n\n"
+        "N_SELECT = 4\n"
+        "rfe = RFE(LogisticRegression(max_iter=3000, multi_class='multinomial',\n"
+        "                              solver='lbfgs'),\n"
+        "          n_features_to_select=min(N_SELECT, X_all.shape[1]))\n"
+        "rfe.fit(X_tr_all, y_train)\n"
+        "sel = rfe.support_\n"
+        "feature_names = [n for n, k in zip(all_feature_names, sel) if k]\n"
+        "X_train = X_tr_all[:, sel]\n"
+        "X_test  = X_te_all[:, sel]\n"
+        "n_features = int(sel.sum())\n"
+        "n_classes  = len(np.unique(y))\n\n"
+        "print(f'RFE-selected features ({n_features}): {feature_names}')\n"
+        "print(f'{X_all.shape[0]} samples | Train {len(X_train)} | Test {len(X_test)} '\n"
+        "      f'| {n_classes} classes')"
+    )
+
+
+def _mlp_common(**kw):
+    base = dict(
+        n_select=4, subdivision_levels=4, c_param=10000, n_fill=5000,
+        epochs=200, batch_size=32, lr=0.01, sub_sweep=list(range(1, 7)),
+        eps=0.05, model_class='FeatureMLP', model_label='MLP')
+    base.update(kw)
+    return base
+
+
+NEW_SPECS = [
+    _mlp_common(
+        path='banknote_experiments.ipynb',
+        title='Banknote Authentication (binary, MLP)',
+        n_classes=2,
+        abstract=(
+            "**Setup.** UCI Banknote Authentication (binary, 1372 rows, 4 features): "
+            "wavelet-transform statistics of banknote images, genuine vs forged. "
+            "Scale to [0,1], target +1 / -1. RFE keeps the top 4 features. "
+            "The network being explained is a **fast feed-forward MLP** (replacing "
+            "the GRU so the pipeline runs quicker). We build a simplex-tree "
+            "surrogate of it and find the **non-convex** parts of its boundary.\n\n"
+            "**Experiment 1.** Remove the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** At a non-convex point, follow LIME's explanation "
+            "vector; because the region is non-convex the MLP **exits the target "
+            "class**, whereas at a convex point LIME stays faithful."
+        ),
+        load_block=binary_load('banknote-authentication'),
+    ),
+    _mlp_common(
+        path='blood_transfusion_experiments.ipynb',
+        title='Blood Transfusion Service Center (binary, MLP)',
+        n_classes=2,
+        abstract=(
+            "**Setup.** Blood Transfusion Service Center (binary, 748 rows, 4 "
+            "features): RFM-style donation history predicting whether a donor gave "
+            "blood in a target period. Scale to [0,1], target +1 / -1, RFE keeps "
+            "the top 4 features. The explained network is a **fast feed-forward "
+            "MLP**. Build a simplex-tree surrogate and find its non-convex leaves.\n\n"
+            "**Experiment 1.** Prune the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** Follow LIME's target-reinforcing vector at a "
+            "non-convex point (MLP leaves the target class) vs a convex point "
+            "(MLP stays in), showing the failure is caused by non-convexity."
+        ),
+        load_block=binary_load('blood-transfusion-service-center'),
+    ),
+    _mlp_common(
+        path='spambase_experiments.ipynb',
+        title='Spambase (binary, MLP)',
+        n_classes=2,
+        abstract=(
+            "**Setup.** UCI Spambase (binary, 4601 rows, 57 features): word / "
+            "character frequency features distinguishing spam from ham email. "
+            "Scale to [0,1], target +1 / -1, RFE keeps the top 4 features. The "
+            "explained network is a **fast feed-forward MLP**. Build a simplex-tree "
+            "surrogate and find the **non-convex** parts of its decision boundary.\n\n"
+            "**Experiment 1.** Remove the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** Follow LIME's vector at a non-convex point (the MLP "
+            "leaves the target class) and contrast with a convex point."
+        ),
+        load_block=binary_load('spambase', feat_prefix='f'),
+    ),
+    _mlp_common(
+        path='vehicle_experiments.ipynb',
+        title='Vehicle Silhouettes (4-class, MLP)',
+        n_classes=4,
+        abstract=(
+            "**Setup.** Statlog Vehicle Silhouettes (4 classes: bus / opel / saab "
+            "/ van, 846 rows, 18 geometric shape features). Scale to [0,1], RFE "
+            "keeps the top 4 features. Train a multiclass **feed-forward MLP** "
+            "(softmax). Build a multiclass simplex-tree surrogate (`LinearSVC` OvR, "
+            "one hyperplane per class) and find non-convex regions across every "
+            "hyperplane.\n\n"
+            "**Experiment 1.** Remove the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** At a non-convex point, follow LIME's vector for the "
+            "MLP's predicted class and watch the MLP leave it; the convex contrast "
+            "point obeys LIME."
+        ),
+        load_block=multiclass_load('vehicle'),
+    ),
+    _mlp_common(
+        path='segment_experiments.ipynb',
+        title='Image Segmentation (7-class, MLP)',
+        n_classes=7,
+        abstract=(
+            "**Setup.** Statlog Image Segmentation (7 classes: brickface, sky, "
+            "foliage, cement, window, path, grass; 2310 rows, 19 features from 3x3 "
+            "image patches). Scale to [0,1], RFE keeps the top 4 features. Train a "
+            "multiclass **feed-forward MLP** (softmax). Build a multiclass "
+            "simplex-tree surrogate (OvR, one hyperplane per class) and find "
+            "non-convex regions across every hyperplane.\n\n"
+            "**Experiment 1.** Remove the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** Follow LIME's vector for the MLP's predicted class "
+            "at a non-convex point (MLP leaves it) vs a convex point (MLP stays)."
+        ),
+        load_block=multiclass_load('segment'),
+    ),
+    _mlp_common(
+        path='waveform_experiments.ipynb',
+        title='Waveform (3-class, MLP)',
+        n_classes=3,
+        abstract=(
+            "**Setup.** Waveform-5000 (3 classes of generated waves, 5000 rows, 40 "
+            "noisy features). Scale to [0,1], RFE keeps the top 4 features. Train a "
+            "multiclass **feed-forward MLP** (softmax). Build a multiclass "
+            "simplex-tree surrogate (OvR, one hyperplane per class) and find the "
+            "non-convex regions across every hyperplane.\n\n"
+            "**Experiment 1.** Remove the non-convex simplices -> the surrogate's "
+            "**generalisation coefficient goes up**.\n\n"
+            "**Experiment 2.** Follow LIME's vector for the MLP's predicted class "
+            "at a non-convex point (MLP leaves it) vs a convex point (MLP stays)."
+        ),
+        load_block=multiclass_load('waveform-5000'),
+    ),
+]
+
+
+# -----------------------------------------------------------------------------
 # Common cell sources (parameterised by the spec)
 # -----------------------------------------------------------------------------
 
@@ -237,7 +434,7 @@ def setup_imports():
     from in2D.classifying.classes.simplex_tree_classifier import SimplexTreeClassifier
     from in2D.tests.data_generators.generate_data_nd import create_simplex_vertices
     from paper_experiments_utils import (
-        FeatureGRU, train_nn, predict_classes, predict_proba,
+        FeatureGRU, FeatureMLP, train_nn, predict_classes, predict_proba,
         find_nonconvex_leaves, build_convex_surrogate,
         leaf_key_for_point, gen_coef,
         make_lime_explainer, lime_direction, push_along_lime)
@@ -248,13 +445,14 @@ def setup_imports():
 
 
 def nn_train_block(spec):
-    """Train GRU code -- binary uses +/-1, multiclass uses 0..K-1 ints."""
+    """Train NN code -- binary uses +/-1, multiclass uses 0..K-1 ints."""
+    model_class = spec.get('model_class', 'FeatureGRU')
     return textwrap.dedent(f"""\
     EPOCHS, BATCH_SIZE, LR = {spec['epochs']}, {spec['batch_size']}, {spec['lr']}
     n_classes = len(np.unique(y_train))
     torch.manual_seed(42); np.random.seed(42)
 
-    nn_model = FeatureGRU(n_features, n_classes=n_classes, hidden=64).to(device)
+    nn_model = {model_class}(n_features, n_classes=n_classes, hidden=64).to(device)
     t0 = time.time()
     train_nn(nn_model, X_train, y_train, X_test, y_test,
              epochs=EPOCHS, lr=LR, batch_size=BATCH_SIZE, device=device)
@@ -267,10 +465,12 @@ def nn_train_block(spec):
 
 
 def learning_curve_block(spec):
+    model_class = spec.get('model_class', 'FeatureGRU')
+    model_label = spec.get('model_label', 'RFE-GRU')
     return textwrap.dedent(f"""\
-    # Train a fresh GRU for 300 epochs only to plot the loss curve 0-300.
+    # Train a fresh network for 300 epochs only to plot the loss curve 0-300.
     torch.manual_seed(42); np.random.seed(42)
-    curve_model = FeatureGRU(n_features, n_classes=n_classes, hidden=64).to(device)
+    curve_model = {model_class}(n_features, n_classes=n_classes, hidden=64).to(device)
     train_nn(curve_model, X_train, y_train, X_test, y_test,
              epochs=300, lr={spec['lr']}, batch_size={spec['batch_size']}, device=device)
 
@@ -281,7 +481,7 @@ def learning_curve_block(spec):
     ax.axvline({spec['epochs']}, color='crimson', ls='--', lw=1.2,
                label=f'paper epochs = {spec['epochs']}')
     ax.set_xlim(0, 300); ax.set_xlabel('epoch'); ax.set_ylabel('training loss')
-    ax.set_title('RFE-GRU learning curve')
+    ax.set_title('{model_label} learning curve')
     ax.legend(); ax.grid(alpha=0.3); plt.tight_layout(); plt.show()
     """)
 
@@ -437,30 +637,31 @@ def gen_coef_plot_block(spec):
 
 
 def headline_block(spec):
-    return textwrap.dedent("""\
+    ml = spec.get('model_label', 'GRU')
+    return textwrap.dedent(f"""\
     # Same metric (true-label test / train) for both. If pruning really cuts
-    # overfitting, the pruned surrogate's gen-coef should pass the GRU's.
+    # overfitting, the pruned surrogate's gen-coef should pass the {ml}'s.
     nn_tr, nn_te, nn_gc = gen_coef(nn_pred, X_train, y_train, X_test, y_test)
     p_tr,  p_te,  p_gc  = gen_coef(stc_convex.predict, X_train, y_train, X_test, y_test)
 
-    print(f'{"Model":34s} {"Train":>8s} {"Test":>8s} {"Gen-coef":>10s}')
+    print(f'{{"Model":34s}} {{"Train":>8s}} {{"Test":>8s}} {{"Gen-coef":>10s}}')
     print('-' * 64)
-    print(f'{"GRU (network being explained)":34s} {nn_tr:>8.4f} {nn_te:>8.4f} {nn_gc:>10.4f}')
-    print(f'{"Simplex-tree surrogate":34s} {p_tr:>8.4f} {p_te:>8.4f} {p_gc:>10.4f}')
+    print(f'{{"{ml} (network being explained)":34s}} {{nn_tr:>8.4f}} {{nn_te:>8.4f}} {{nn_gc:>10.4f}}')
+    print(f'{{"Simplex-tree surrogate":34s}} {{p_tr:>8.4f}} {{p_te:>8.4f}} {{p_gc:>10.4f}}')
     print('-' * 64)
-    print(f'Surrogate gen-coef {p_gc:.4f}  vs  GRU gen-coef {nn_gc:.4f}  -> '
-          f'{"HIGHER (the surrogate overfits less than the GRU)" if p_gc > nn_gc else "lower (NN already generalises well)"}')
+    print(f'Surrogate gen-coef {{p_gc:.4f}}  vs  {ml} gen-coef {{nn_gc:.4f}}  -> '
+          f'{{"HIGHER (the surrogate overfits less than the {ml})" if p_gc > nn_gc else "lower (NN already generalises well)"}}')
     print('Note: a higher gen-coef means LESS OVERFITTING, not higher absolute accuracy.')
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    names = ['GRU', 'Simplex-tree\\nsurrogate']
+    names = ['{ml}', 'Simplex-tree\\nsurrogate']
     vals  = [nn_gc, p_gc]
     bars = ax.bar(names, vals, color=['slategray', 'mediumseagreen'])
     ax.set_ylabel('Generalisation coefficient (test / train, true labels)')
-    ax.set_title('Surrogate vs GRU generalisation')
+    ax.set_title(f'Surrogate vs {ml} generalisation')
     ax.set_ylim(0, max(vals) * 1.15)
     for b, v in zip(bars, vals):
-        ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f'{v:.3f}', ha='center', va='bottom')
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f'{{v:.3f}}', ha='center', va='bottom')
     plt.tight_layout(); plt.show()
     """)
 
@@ -702,9 +903,16 @@ def build_notebook(spec):
     md("### 1. Load & preprocess (RFE pipeline)")
     co(spec['load_block'])
 
-    md("### 2. Train the RFE-GRU\n\n"
-       "Selected features -> reshaped to `(n_features, 1)` -> GRU (hidden=64) -> "
-       "sigmoid (binary) or softmax (multiclass).")
+    ml = spec.get('model_label', 'RFE-GRU')
+    if spec.get('model_class', 'FeatureGRU') == 'FeatureMLP':
+        md(f"### 2. Train the {ml}\n\n"
+           "Selected features -> feed-forward MLP (2 hidden layers of 64, ReLU) -> "
+           "sigmoid (binary) or softmax (multiclass). This replaces the recurrent "
+           "GRU with a plain MLP so training and surrogate evaluation run faster.")
+    else:
+        md(f"### 2. Train the {ml}\n\n"
+           "Selected features -> reshaped to `(n_features, 1)` -> GRU (hidden=64) -> "
+           "sigmoid (binary) or softmax (multiclass).")
     co(nn_train_block(spec))
 
     md("### Learning curve\n\n"
@@ -781,9 +989,34 @@ def build_notebook(spec):
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for spec in SPECS:
-    nb = build_notebook(spec)
-    out = os.path.join(HERE, spec['path'])
-    with open(out, 'w') as f:
-        nbf.write(nb, f)
-    print(f'wrote {out}  ({len(nb.cells)} cells)')
+
+
+def main(argv=None):
+    """Write the requested notebooks. Guarded behind __main__ so that importing
+    this module (e.g. to reuse SPECS/NEW_SPECS) does NOT overwrite any notebooks.
+
+    By default only (re)generate the new MLP notebooks so the existing GRU
+    notebooks (phoneme/wine/letter) are left untouched. Pass --all to rebuild
+    everything, or one or more notebook filenames to rebuild just those.
+    """
+    import sys as _sys
+    argv = list(_sys.argv[1:] if argv is None else argv)
+    _args = [a for a in argv if not a.startswith('-')]
+    if '--all' in argv:
+        to_build = SPECS + NEW_SPECS
+    elif _args:
+        by_path = {s['path']: s for s in SPECS + NEW_SPECS}
+        to_build = [by_path[a] for a in _args if a in by_path]
+    else:
+        to_build = NEW_SPECS
+
+    for spec in to_build:
+        nb = build_notebook(spec)
+        out = os.path.join(HERE, spec['path'])
+        with open(out, 'w') as f:
+            nbf.write(nb, f)
+        print(f'wrote {out}  ({len(nb.cells)} cells)')
+
+
+if __name__ == '__main__':
+    main()
