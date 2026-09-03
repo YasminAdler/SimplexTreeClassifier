@@ -1,0 +1,134 @@
+FUNCTION                                 VARIABLE            VALUE
+------------------------------------------------------------------------------
+
+# ---- make_enclosing_simplex / get_device -----------------------
+make_enclosing_simplex(2)                verts2d           = [(0.0, 0.0), (2.0, 0.0), (0.0, 2.0)]
+make_enclosing_simplex(4)                verts4d           = [(0.0, 0.0, 0.0, 0.0), (4.2, 0.0, 0.0, 0.0), (0.0, 4.2, 0.0, 0.0), (0.0, 0.0, 4.2, 0.0), (0.0, 0.0, 0.0, 4.2)]
+SimplexTree.find_containing_simplex      corner_inside     = True
+get_device                               device            = cpu
+
+# ---- VertexRegistry --------------------------------------------
+VertexRegistry.register_vertices         indices           = [0, 1, 2]
+len(VertexRegistry)                      n_vertices        = 3
+register_vertices (duplicate)            same_index        = 0
+VertexRegistry.as_matrix                 matrix            = [[0. 0.]
+ [1. 0.]
+ [0. 1.]]
+
+# ---- Simplex ---------------------------------------------------
+Simplex(indices, reg)                    simplex           = Simplex(vertex_indices=[0, 1, 2], dim=2, degenerate=False)
+Simplex.dimension                        dimension         = 2
+Simplex.get_vertices_as_tuples           vertices          = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
+Simplex.contains_point                   inside            = True
+Simplex.contains_point                   outside           = False
+
+# ---- SimplexTree -----------------------------------------------
+SimplexTree.get_leaves                   n_leaves          = 9
+SimplexTree.get_splitting_points         n_splits          = 4
+SimplexTree.find_containing_simplex      found             = True
+SimplexTree.find_adjacent_simplexes      adjacent_vertices = [[(2.0, 0.0), (0.67, 0.67), (0.89, 0.89)], [(2.0, 0.0), (0.0, 2.0), (0.89, 0.89)], [(0.0, 2.0), (0.67, 0.67), (0.22, 0.89)]]
+SimplexTree.subdivide_leaf               children_vertices = [[(0.67, 0.67), (0.89, 0.89), (0.52, 1.19)], [(0.0, 2.0), (0.89, 0.89), (0.52, 1.19)], [(0.0, 2.0), (0.67, 0.67), (0.52, 1.19)]]
+SimplexTree.print_tree (after subdivide) tree_str          = 
+└── [0] vertices: [0, 1, 2]
+    ├── [1] vertices: [1, 2, 3]
+    │   ├── [4] vertices: [2, 3, 4]
+    │   │   ├── vertices: [3, 4, 7]
+    │   │   ├── vertices: [2, 4, 7]
+    │   │   └── vertices: [2, 3, 7]
+    │   ├── vertices: [1, 3, 4]
+    │   └── vertices: [1, 2, 4]
+    ├── [2] vertices: [0, 2, 3]
+    │   ├── vertices: [2, 3, 5]
+    │   ├── vertices: [0, 3, 5]
+    │   └── vertices: [0, 2, 5]
+    └── [3] vertices: [0, 1, 3]
+        ├── vertices: [1, 3, 6]
+        ├── vertices: [0, 3, 6]
+        └── vertices: [0, 1, 6]
+SimplexTree.remove_by_leaf_key           removed_key       = [3, 4, 7]
+SimplexTree.remove_by_leaf_key           removed_ok        = True
+SimplexTree.print_tree (after removal)   tree_str          = 
+└── [0] vertices: [0, 1, 2]
+    ├── [1] vertices: [1, 2, 3]
+    │   ├── vertices: [2, 3, 4]
+    │   ├── vertices: [1, 3, 4]
+    │   └── vertices: [1, 2, 4]
+    ├── [2] vertices: [0, 2, 3]
+    │   ├── vertices: [2, 3, 5]
+    │   ├── vertices: [0, 3, 5]
+    │   └── vertices: [0, 2, 5]
+    └── [3] vertices: [0, 1, 3]
+        ├── vertices: [1, 3, 6]
+        ├── vertices: [0, 3, 6]
+        └── vertices: [0, 1, 6]
+
+# ---- Constructor modes -----------------------------------------
+SimplexTreeClassifier(dataset)           mode              = dataset
+SimplexTreeClassifier(dataset)           classifier        = LinearSVC
+SimplexTreeClassifier(dataset)           tree_built_at_init= False
+SimplexTreeClassifier(surrogate)         mode              = surrogate
+SimplexTreeClassifier(surrogate)         n_features        = 2
+SimplexTreeClassifier(surrogate)         tree_built_at_init= True
+SimplexTreeClassifier(model=...)         surrogate_error   = Surrogate mode (model=...) requires n_features.
+
+# ---- transform / fit / predict (2-D) ---------------------------
+SimplexTreeClassifier.transform          T_shape           = (200, 16)
+transform (row sums min,max)             row_sums          = (1.0, 1.0)
+SimplexTreeClassifier.fit                n_leaves          = 23
+SimplexTreeClassifier.predict            accuracy_2d       = 0.975
+repr(clf)                                clf               = SimplexTreeClassifier(mode=dataset, dimension=2, strategy=barycentric, leaves=23, device=cpu)
+
+# ---- fit / predict (N-D, d=5) ----------------------------------
+fit/predict (d=5)                        n_leaves_nd       = 31
+fit/predict (d=5)                        accuracy_nd       = 0.95
+
+# ---- Data-driven subdivision -----------------------------------
+data_driven fit                          n_leaves_dd       = 51
+data_driven predict                      accuracy_dd       = 0.99
+
+# ---- Surrogate mode --------------------------------------------
+surrogate (callable) predict             agreement         = 0.975
+surrogate (.predict obj)                 obj_preds         = [1, 0]
+
+# ---- Classifier geometry queries -------------------------------
+clf.find_containing_simplex              leaf_vertices     = [(0.0, 0.0), (0.0, 2.1), (0.7000000000000001, 0.7000000000000001)]
+clf.is_in_simplex                        inside            = True
+clf.is_in_simplex                        outside           = False
+clf.find_adjacent_simplexes              n_adjacent        = 3
+clf.get_simplex_vertices                 n_leaf_vertexsets = 23
+clf.get_simplex_vertices                 first_leaf        = [(0.0, 2.1), (0.7000000000000001, 0.7000000000000001), (0.9333333333333335, 0.9333333333333335)]
+
+# ---- Linear helpers + decision boundary (2-class) --------------
+clf.is_linear_classifier                 is_linear         = True
+clf.get_weights_and_intercept            weights_shape     = (16,)
+clf.get_weights_and_intercept            intercept         = -0.0002
+clf.identify_crossing_simplices          n_crossing        = 21
+clf.identify_crossing_simplices          crossing0_keys    = ['decision_values', 'simplex', 'vertices']
+clf.same_side_keys_                      n_same_side       = 0
+clf.find_same_side_simplices             n_same_side2      = 0
+clf.find_nonconvex_leaves(distance)      n_nonconvex_dist  = 6
+clf.find_nonconvex_leaves(sign)          n_nonconvex_sign  = 12
+
+# ---- PlaneEquation ---------------------------------------------
+clf.compute_plane_equations              n_planes          = 21
+PlaneEquation.compute_plane_from_weights coefficients      = [-1.45, -1.9521, 4.0902]
+PlaneEquation.get_cartesian_form         cartesian_form    = -1.4500x1 -1.9521x2 + 4.0902 = 0
+
+# ---- Multiclass (4 classes) ------------------------------------
+multiclass classifier.coef_              n_hyperplanes     = 4
+multiclass fit                           n_leaves_mc       = 25
+multiclass predict                       accuracy_mc       = 0.6267
+multiclass find_nonconvex_leaves         n_nonconvex_mc    = 23
+
+# ---- Non-convex pruning ----------------------------------------
+clf.remove_nonconvex_leaves              leaves_before     = 73
+clf.remove_nonconvex_leaves              removed           = 18
+clf.remove_nonconvex_leaves              leaves_after      = 55
+non-linear (SVC rbf)                     is_linear         = False
+non-linear predict                       accuracy          = 0.955
+non-linear identify_crossing_simplices   n_crossing        = 4
+remove_nonconvex_leaves (non-linear)     pruning_error     = SVC is not a linear classifier; non-convex removal requires linear weights.
+
+==============================================================================
+ALL 69 CALLS SUCCEEDED  ->  log saved to /home/yasmin/SimplexTreeClassifier/simplex_tree_package/tests/api_run.log
+==============================================================================

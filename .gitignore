@@ -89,6 +89,7 @@ images_for_paper
 adjacency_counter_example.png
 
 myvenv
+myvenv2
 in2D/to_save_for_paper/_*
 in2D/to_save_for_paper/paper_writing.ltx
 in2D/to_save_for_paper/models/*

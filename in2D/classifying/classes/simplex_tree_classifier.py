@@ -267,6 +267,7 @@ class SimplexTreeClassifier:
 
         return crossing_simplices
 
+    ### TODO: remove this
     def identify_svm_crossing_simplices(self) -> List[Dict]:
         """Backward-compatible alias. Requires a linear classifier."""
         if not self.is_linear_classifier:
@@ -276,6 +277,7 @@ class SimplexTreeClassifier:
             )
         return self.identify_crossing_simplices()
 
+    ### TODO: brobably dont use this too
     def compute_svm_plane_equations(self) -> List[Dict]:
         """
         Computes the decision boundary plane equation within each crossing simplex.
@@ -301,6 +303,7 @@ class SimplexTreeClassifier:
                 'cartesian_form': plane_eq.get_cartesian_form()
             })
         return plane_equations
+
 
     def find_same_side_simplices(self) -> set:
         """
